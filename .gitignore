@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data & Models
+*.pt
+*.pth
+*.h5
+*.npz
+*.npy
+*.fasta
+*.fa
+*.gtf
+*.clstr
+*.csv
+data/*/
+
+# Experiments (for results, go to Zenodo)
+gencode_v47_experiments/
+gencode_v49_experiments/
+logs/*
+lncrnapy/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
