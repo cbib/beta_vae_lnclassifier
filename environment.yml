@@ -1,0 +1,59 @@
+name: beta_lncrna
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+
+dependencies:
+  # Python
+  - python=3.10
+  
+  # PyTorch with CUDA
+  - pytorch::pytorch=2.5.1
+  - pytorch::torchvision=0.20.1
+  - pytorch::torchaudio=2.5.1
+  - pytorch::pytorch-cuda=12.1
+  - pytorch::pytorch-mutex=1.0=cuda
+  
+  # Core scientific computing
+  - numpy=1.26.4
+  - pandas=2.3.3
+  - scipy=1.15.3
+  
+  # Machine learning
+  - scikit-learn=1.6.1
+  - scikit-image=0.25.2
+  
+  # Bioinformatics
+  - biopython=1.85
+  
+  # Visualization
+  - matplotlib=3.10.3
+  - seaborn=0.13.2
+  - upsetplot=0.9.0
+  
+  # HDF5 support
+  - h5py=3.15.1
+  - pytables=3.10.1
+  
+  # Utilities
+  - pyyaml=6.0.2
+  - tqdm=4.67.1
+  - joblib=1.5.1
+  
+  # Statistical analysis
+  - statsmodels=0.14.6
+  
+  # Development
+  - jupyter
+  - jupyterlab
+  - ipython
+  
+  # From pip (contains lncRNABERT specific packages)
+  - pip
+  - pip:
+      - sentencepiece==0.2.0
+      - tqdm==4.67.0
+      - umap-learn==0.5.7
+      - numba==0.60.0
+      - llvmlite==0.43.0
