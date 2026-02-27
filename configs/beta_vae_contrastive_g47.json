@@ -1,0 +1,41 @@
+{
+    "model": {
+      "architecture": "beta_vae",
+      "input_dim": 5,
+      "max_length": 15000,
+      "latent_dim": 128,
+      "beta": 4.0,
+      "num_classes": 2,
+      "dropout_rate": 0.3,
+      "embedding_dim": 128,
+      "projection_dim": 64,
+      "encoding_type": "cse",
+      "use_cse": true,
+      "cse_d_model": 128,
+      "cse_kernel_size": 9
+    },
+    "data": {
+      "lnc_fasta": "data/split_gencode_47/lnc_trainval.fa",
+        "pc_fasta": "data/split_gencode_47/pc_trainval.fa",
+        "lnc_test_fasta": "data/split_gencode_47/lnc_test.fa",
+        "pc_test_fasta": "data/split_gencode_47/pc_test.fa"
+    },
+    "training": {
+      "batch_size": 128,
+      "num_epochs": 30,
+      "learning_rate": 0.0005,
+      "weight_decay": 0.0001,
+      "alpha": 0.001,
+      "beta": 4.0,
+      "gamma_contrastive": 1,
+      "gamma_classification": 100.0,
+      "temperature": 0.15,
+      "reconstruction_loss": "bce",
+      "early_stopping_patience": 10,
+      "random_state": 42,
+      "num_workers": 1
+        },
+    "output": {
+      "experiment_name": "gencode_v47_experiments/beta_vae_contrastive_g47"
+    }
+  }

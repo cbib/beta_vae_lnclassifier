@@ -1,0 +1,37 @@
+{
+    "data": {
+      "lnc_fasta": "data/split_gencode_49/lnc_trainval.fa",
+      "pc_fasta": "data/split_gencode_49/pc_trainval.fa",
+      "lnc_test_fasta": "data/split_gencode_49/lnc_test.fa",
+      "pc_test_fasta": "data/split_gencode_49/pc_test.fa"
+    },
+    "model": {
+      "architecture": "cnn",
+      "encoding_type": "cse",
+      "max_length": 15000,
+      "num_classes": 2,
+      "input_dim": 5,
+      "embedding_dim": 256,
+      "projection_dim": 128,
+      "dropout_rate": 0.5,
+      "use_cse": true,
+      "cse_d_model": 128,
+      "cse_kernel_size": 9
+    },
+    "training": {
+      "batch_size": 128,
+      "num_epochs": 30,
+      "learning_rate": 0.0001,
+      "weight_decay": 0.001,
+      "early_stopping_patience": 10,
+      "random_state": 42,
+      "num_workers": 1,
+      "use_class_weights": true,
+      "lambda_contrastive": 0.02,
+      "lambda_classification": 1.0,
+      "temperature": 0.15
+    },
+    "output": {
+      "experiment_name": "gencode_v49_experiments/cnn_g49"
+    }
+  }
