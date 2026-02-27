@@ -56,8 +56,8 @@ echo ""
 # -----------------------------------------------------------------------------
 
 # G49 + GENCODE comparison
-EXPERIMENT_DIR="gencode_v49_experiments/beta_vae_features_attn_g49_split"
-CONFIG="g49_configs/beta_vae_features_attn_g49_split.json"
+EXPERIMENT_DIR="gencode_v49_experiments/beta_vae_features_attn_g49"
+CONFIG="configs/beta_vae_features_attn_g49.json"
 BIOTYPE_CSV="data/g49_dataset_biotypes_cdhit.csv"
 LNC_FASTA="data/split_gencode_49/lnc_trainval.fa"
 PC_FASTA="data/split_gencode_49/pc_trainval.fa"
@@ -77,7 +77,7 @@ NEW_LNC="data/cdhit_clusters/g49_lncRNA_clustered.fa"
 COMPARISON_OUTPUT_DIR="data/gencode_comparison_v47_vs_v49_features"
 
 # G47
-#EXPERIMENT_DIR="gencode_v47_experiments/beta_vae_features_attn_g47_split"
+#EXPERIMENT_DIR="gencode_v47_experiments/beta_vae_features_attn_g47"
 #CONFIG="configs/beta_vae_features_attn_g47.json"
 #BIOTYPE_CSV="data/g47_dataset_biotypes_cdhit.csv"
 #LNC_FASTA="data/split_gencode_47/lnc_trainval.fa"
