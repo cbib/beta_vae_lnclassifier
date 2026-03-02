@@ -1,5 +1,7 @@
 # β-VAE LNClassifier
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18833347.svg)](https://doi.org/10.5281/zenodo.18833347)
+
 Training and analysis code for β-VAE-based lncRNA classification, as described in:
 
 
