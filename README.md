@@ -34,8 +34,8 @@ beta_vae_lnclassifier/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/[username]/lncrna-classifier.git
-cd lncrna-classifier
+git clone https://github.com/cbib//beta_vae_lnclassifier.git
+cd beta_vae_lnclassifier
 ```
 
 ### 2. Create the main environment
@@ -50,7 +50,7 @@ conda activate beta_lncrna
 Add this to your `~/.bashrc` (once):
 
 ```bash
-echo 'export PYTHONPATH="/path/to/lncrna-classifier:$PYTHONPATH"' >> ~/.bashrc
+echo 'export PYTHONPATH="/path/to/beta_vae_lnclassifier:$PYTHONPATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
