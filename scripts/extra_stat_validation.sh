@@ -48,3 +48,35 @@ python analysis/post_training_pipeline/scripts/extra_stat_validation.py \
     --labels "CNN" "βVAE+Contr." "βVAE+Feat." "βVAE+Attn" \
     --prob_col mean_confidence \
     --output_dir gencode_v49_experiments/stat_results/
+
+# ─────────────────────────────────────────────
+# GENCODEv47 ablations
+# ─────────────────────────────────────────────
+python analysis/post_training_pipeline/scripts/extra_stat_validation.py \
+    --fold_results \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_only/cv_evaluation_results.json \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_te/cv_evaluation_results.json \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_nonb/cv_evaluation_results.json \
+    --test_preds \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_only/evaluation_csvs/test_predictions.csv \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_te/evaluation_csvs/test_predictions.csv \
+        gencode_v47_experiments/beta_vae_features_attn_g47/ablations/seq_nonb/evaluation_csvs/test_predictions.csv \
+    --labels "Seq. only" "Seq.+TE" "Seq.+NonB" \
+    --prob_col mean_confidence \
+    --output_dir stat_results/ablations_g47
+
+# ─────────────────────────────────────────────
+# GENCODEv49 ablations
+# ─────────────────────────────────────────────
+python analysis/post_training_pipeline/scripts/extra_stat_validation.py \
+    --fold_results \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_only/cv_evaluation_results.json \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_te/cv_evaluation_results.json \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_nonb/cv_evaluation_results.json \
+    --test_preds \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_only/evaluation_csvs/test_predictions.csv \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_te/evaluation_csvs/test_predictions.csv \
+        gencode_v49_experiments/beta_vae_features_attn_g49/ablations/seq_nonb/evaluation_csvs/test_predictions.csv \
+    --labels "Seq. only" "Seq.+TE" "Seq.+NonB" \
+    --prob_col mean_confidence \
+    --output_dir stat_results/ablations_g49

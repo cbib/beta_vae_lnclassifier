@@ -5,7 +5,6 @@ Computes:
   1. Fold-wise summary: mean ± SD, 95% CI (t-dist) for F1/precision/recall
   2. Bootstrap 95% CI for test set macro F1
   3. DeLong 95% CI for test set AUC (requires probability scores)
-  4. Wilcoxon signed-rank + Holm correction for model pairs (requires all models)
 
 Usage:
     python extra_stat_validation.py \
@@ -20,7 +19,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from scipy import stats
-from scipy.stats import wilcoxon
 from sklearn.metrics import f1_score, roc_auc_score
 from itertools import combinations
 
@@ -126,43 +124,6 @@ def delong_auc_ci(y_true, y_score, alpha=0.05):
 
 
 # ─────────────────────────────────────────────
-# 4. Wilcoxon signed-rank + Holm correction
-# ─────────────────────────────────────────────
-def pairwise_wilcoxon(fold_data: dict, metric='f1'):
-    """
-    fold_data: {label: [fold_0_score, fold_1_score, ...]}
-    Returns DataFrame with pairwise Wilcoxon results + Holm correction.
-    """
-    labels = list(fold_data.keys())
-    rows = []
-    for a, b in combinations(labels, 2):
-        xa = np.array(fold_data[a])
-        xb = np.array(fold_data[b])
-        diff = xa - xb
-        if np.all(diff == 0):
-            stat, p = np.nan, 1.0
-        else:
-            stat, p = wilcoxon(xa, xb, alternative='two-sided')
-        rows.append({
-            'model_a': a,
-            'model_b': b,
-            'mean_diff': round((xa - xb).mean(), 4),
-            'statistic': stat,
-            'p_value': p,
-        })
-
-    df = pd.DataFrame(rows).sort_values('p_value')
-
-    # Holm correction
-    n = len(df)
-    df['p_holm'] = [min(1.0, p * (n - i))
-                    for i, p in enumerate(df['p_value'])]
-    df['significant'] = df['p_holm'] < 0.05
-    df['p_holm'] = df['p_holm'].round(4)
-    return df
-
-
-# ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
 def main():
@@ -188,7 +149,6 @@ def main():
     all_fold_summary = []
     all_bootstrap = []
     all_delong = []
-    fold_f1_data = {}  # for Wilcoxon
 
     for fold_path, pred_path, label in zip(
             args.fold_results, args.test_preds, args.labels):
@@ -198,8 +158,6 @@ def main():
             fold_results = json.load(f)
         rows = fold_summary(fold_path, label)
         all_fold_summary.extend(rows)
-        fold_f1_data[label] = [r['values'] for r in rows
-                                if r['metric'] == 'f1'][0]
 
         # Test set
         df = pd.read_csv(pred_path)
@@ -227,9 +185,6 @@ def main():
             print(f"  WARNING: {args.prob_col} not found in {pred_path}, "
                   f"skipping DeLong for {label}")
 
-    # ── 4: Wilcoxon pairwise ──
-    wilcoxon_df = pairwise_wilcoxon(fold_f1_data, metric='f1')
-
     # ── Save outputs ──
     fold_df = pd.DataFrame(all_fold_summary).drop(columns='values')
     fold_df.to_csv(output_dir / 'fold_summary.csv', index=False)
@@ -241,7 +196,6 @@ def main():
         delong_df = pd.DataFrame(all_delong)
         delong_df.to_csv(output_dir / 'delong_auc_ci.csv', index=False)
 
-    wilcoxon_df.to_csv(output_dir / 'wilcoxon_pairwise.csv', index=False)
 
     # ── Print summary ──
     print("\n── Fold-wise summary ──")
@@ -253,9 +207,6 @@ def main():
     if all_delong:
         print("\n── DeLong AUC CI (test set) ──")
         print(delong_df.to_string(index=False))
-
-    print("\n── Wilcoxon pairwise (fold F1, Holm-corrected) ──")
-    print(wilcoxon_df.to_string(index=False))
 
 
 if __name__ == '__main__':
