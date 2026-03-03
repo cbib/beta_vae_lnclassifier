@@ -63,7 +63,7 @@ source ~/.bashrc
 Processed datasets (CD-HIT filtered FASTA files, TE feature CSVs, non-B DNA feature CSVs,
 biotype annotation CSVs, and train/val/test split manifests) are deposited on Zenodo:
 
-> **Zenodo DOI: [DOI — to be added upon publication]**
+> **Zenodo DOI: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18849718.svg)](https://doi.org/10.5281/zenodo.18849718)**
 
 ### Download and setup
 
