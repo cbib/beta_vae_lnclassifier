@@ -12,7 +12,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Zenodo record ID and DOI (UPDATE THESE AFTER UPLOADING TO ZENODO)
+# Zenodo record ID and DOI
 ZENODO_RECORD_ID="18849718"  # e.g., "1234567"
 ZENODO_DOI="10.5281/zenodo.18849718"
 
