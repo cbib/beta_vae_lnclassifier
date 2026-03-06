@@ -394,7 +394,7 @@ def visualize_umap(umap_embedding, labels, predictions, biotypes, is_hard, outpu
     
     ax.scatter(umap_embedding[hard_pc, 0], umap_embedding[hard_pc, 1],
               c='#4ECDC4', s=8, alpha=0.7, edgecolors='black', linewidths=0.3,
-              label=f'Hard PC (n={hard_pc.sum():,})', rasterized=True)
+              label=f'Hard mRNA (n={hard_pc.sum():,})', rasterized=True)
     
     ax.set_xlabel('UMAP 1', fontsize=14, fontweight='bold')
     ax.set_ylabel('UMAP 2', fontsize=14, fontweight='bold')

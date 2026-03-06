@@ -282,7 +282,7 @@ def process_lncrnabert(dataset, config):
             raise ValueError("Could not load FASTA files")
         
         # Create label mapping
-        true_labels = {tid: 1 for tid in pc_ids}  # PC = 1
+        true_labels = {tid: 1 for tid in pc_ids}  # mRNA = 1
         true_labels.update({tid: 0 for tid in lnc_ids})  # lncRNA = 0
         
         # Match predictions

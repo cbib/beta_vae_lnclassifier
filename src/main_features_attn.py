@@ -82,7 +82,7 @@ def evaluate_on_test_set(cv_trainer, config, output_dir):
     lnc_count = sum(1 for v in test_dataset.label_dict.values() if v == 0)
     pc_count  = sum(1 for v in test_dataset.label_dict.values() if v == 1)
     print(f"    lncRNA: {lnc_count:,}")
-    print(f"    pcRNA:  {pc_count:,}")
+    print(f"    mRNA:  {pc_count:,}")
     test_metrics = cv_trainer.evaluate_on_test_set(test_dataset)
 
     print(f"\n  Test results:")

@@ -77,7 +77,7 @@ def load_bert_predictions(csv_path: Path, test_ids: set,
     df = pd.read_csv(csv_path)
     df["transcript_id"] = df["id"].apply(extract_enst)
     df = df[df["transcript_id"].isin(test_ids)].copy()
-    df["pred_label"] = df["class"]   # 'lncRNA' or 'pcRNA' — normalise below
+    df["pred_label"] = df["class"]   # 'lncRNA' or 'mRNA' — normalise below
     # normalise BERT class strings to match your model labels
     df["pred_label"] = df["pred_label"].map({"pcRNA": "pc", "ncRNA": "lnc"})
     # now pred_label is 'lnc' or 'pc'

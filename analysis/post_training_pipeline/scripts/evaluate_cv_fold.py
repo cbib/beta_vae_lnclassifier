@@ -603,7 +603,7 @@ def main():
     parser.add_argument('--test_lnc_fasta', type=str, default=None,
                    help='Independent test set lncRNA FASTA (holdout evaluation)')
     parser.add_argument('--test_pc_fasta', type=str, default=None,
-                   help='Independent test set pcRNA FASTA (holdout evaluation)')
+                   help='Independent test set mRNA FASTA (holdout evaluation)')
     parser.add_argument('--batch_size', type=int, default=256,
                        help='Batch size for evaluation')
     parser.add_argument('--extract_all_folds', action='store_true',

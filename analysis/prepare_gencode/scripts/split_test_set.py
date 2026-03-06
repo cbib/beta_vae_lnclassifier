@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Split CD-HIT filtered lncRNA and pcRNA FASTA files into:
+Split CD-HIT filtered lncRNA and mRNA FASTA files into:
   - 95% train/val  → used as input to existing CV training scripts
   -  5% test       → held-out independent test set
 
@@ -69,7 +69,7 @@ def main():
         description="Split lnc/pc FASTAs into train/val and independent test sets"
     )
     parser.add_argument("--lnc_fasta",   required=True,  help="CD-HIT filtered lncRNA FASTA")
-    parser.add_argument("--pc_fasta",    required=True,  help="CD-HIT filtered pcRNA FASTA")
+    parser.add_argument("--pc_fasta",    required=True,  help="CD-HIT filtered mRNA FASTA")
     parser.add_argument("--output_dir",  required=True,  help="Directory for output files")
     parser.add_argument("--test_size",   type=float, default=0.05,
                         help="Fraction of each class to hold out as test (default: 0.05)")
@@ -90,7 +90,7 @@ def main():
     lnc_records = load_fasta(args.lnc_fasta)
     pc_records  = load_fasta(args.pc_fasta)
     print(f"  lncRNA sequences:  {len(lnc_records):,}")
-    print(f"  pcRNA  sequences:  {len(pc_records):,}")
+    print(f"  mRNA  sequences:  {len(pc_records):,}")
     print(f"  Total:             {len(lnc_records) + len(pc_records):,}")
 
     # ------------------------------------------------------------------

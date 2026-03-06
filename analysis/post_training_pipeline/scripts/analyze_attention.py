@@ -97,7 +97,7 @@ CLASS_PALETTE = {
     'pc_as_lnc':         '#2980B9',
 }
 
-CLASS_LABELS = {0: 'lncRNA', 1: 'pcRNA'}
+CLASS_LABELS = {0: 'lncRNA', 1: 'mRNA'}
 
 CLASS_GROUP_ORDER = [
     'easy_lnc', 'easy_pc',
@@ -106,11 +106,11 @@ CLASS_GROUP_ORDER = [
 ]
 CLASS_GROUP_LABELS = {
     'easy_lnc':          'Easy\nlncRNA',
-    'easy_pc':           'Easy\npcRNA',
+    'easy_pc':           'Easy\nmRNA',
     'hard_correct_lnc':  'Hard\nlncRNA',
-    'hard_correct_pc':   'Hard\npcRNA',
+    'hard_correct_pc':   'Hard\nmRNA',
     'misclassified_lnc': 'Misclass\nlncRNA',
-    'misclassified_pc':  'Misclass\npcRNA',
+    'misclassified_pc':  'Misclass\nmRNA',
 }
 
 
@@ -658,8 +658,8 @@ def plot_misclassified_direction(all_df, attn_arrays_by_direction, class_out, gc
     misclass   = all_df[all_df['group'] == 'misclassified'].copy()
     directions = ['lnc_as_pc', 'pc_as_lnc']
     dir_labels = {
-        'lnc_as_pc': 'lncRNA→pcRNA',
-        'pc_as_lnc': 'pcRNA→lncRNA',
+        'lnc_as_pc': 'lncRNA→mRNA',
+        'pc_as_lnc': 'mRNA→lncRNA',
     }
     dir_colors = {
         'lnc_as_pc': CLASS_PALETTE['lnc_as_pc'],
@@ -742,7 +742,7 @@ def plot_misclassified_direction(all_df, attn_arrays_by_direction, class_out, gc
     print(f"  Saved: misclassified_direction_stats.csv")
 
     _savefig(fig, class_out / 'misclassified_direction.png',
-             suptitle=f'{gc_tag}Misclassified Transcripts: lncRNA→pcRNA vs pcRNA→lncRNA', top=0.75)
+             suptitle=f'{gc_tag}Misclassified Transcripts: lncRNA→mRNA vs mRNA→lncRNA', top=0.75)
 
 
 def plot_positional_profile_by_class(attn_arrays_by_class, class_out, gc_tag=''):
@@ -778,7 +778,7 @@ def plot_positional_profile_by_class(attn_arrays_by_class, class_out, gc_tag='')
         ax.legend(ncol=2, **LEG_KW)
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=LW_THIN)
     _savefig(fig, class_out / 'positional_profile_by_class.png',
-             suptitle=f'{gc_tag}Positional Profile by Group × Class  |  Solid=lncRNA  Dashed=pcRNA')
+             suptitle=f'{gc_tag}Positional Profile by Group × Class  |  Solid=lncRNA  Dashed=mRNA')
 
 def save_class_attention_stats(all_df, class_out):
     rows = []

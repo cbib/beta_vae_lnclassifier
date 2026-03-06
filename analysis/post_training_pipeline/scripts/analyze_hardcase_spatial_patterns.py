@@ -136,13 +136,13 @@ def identify_spatial_regions(df, n_regions=5):
         
         # Classify region position based on TRUE LABELS
         if pc_pct > 70:
-            position = "pc_dominated"
+            position = "mRNA_dominated"
         elif lnc_pct > 70:
             position = "lnc_dominated"
         elif abs(lnc_pct - pc_pct) < 20:
             position = "frontier"
         elif pc_pct > lnc_pct:
-            position = "pc_majority"
+            position = "mRNA_majority"
         else:
             position = "lnc_majority"
         
@@ -363,11 +363,11 @@ def visualize_regions(df, stats_df, output_dir, fig_tag=None):
         
         # Protein-coding segment
         ax_bars.barh(i, row.pct_pc, 0.6, left=row.pct_lnc,
-                    label='Protein-coding' if i == 0 else '',
+                    label='mRNA' if i == 0 else '',
                     color='#4ECDC4', edgecolor='black', linewidth=1)
         
-        # Add label
-        label_text = f'n={int(row.n_samples)}: {row.pct_lnc:.1f}% lnc, {row.pct_pc:.1f}% PC'
+        # Add label — use 'mRNA' instead of 'PC'
+        label_text = f'n={int(row.n_samples)}: {row.pct_lnc:.1f}% lnc, {row.pct_pc:.1f}% mRNA'
         ax_bars.text(102, i, label_text, va='center', ha='left', fontsize=9)
     
     ax_bars.set_yticks(y_positions)
