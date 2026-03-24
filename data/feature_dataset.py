@@ -1,4 +1,4 @@
-# experiments/data/feature_dataset.py
+# data/feature_dataset.py
 """
 Dataset class that combines sequence data with TE and non-B DNA features.
 Binary classification only (lncRNA vs protein_coding).

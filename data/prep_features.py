@@ -1,4 +1,4 @@
-# experiments/data/prepare_features.py
+# data/prepare_features.py
 """
 Prepare TE and non-B DNA features for integration with β-VAE.
 Scalers are fit on trainval transcripts only.
