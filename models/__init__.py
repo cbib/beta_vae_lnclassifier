@@ -7,8 +7,6 @@ Model factory
 from .vae import VAE
 from .transformer import TransformerClassifier, LightweightTransformer
 from .cnn_transformer import CNNTransformerHybrid """
-from .autoencoder import DeterministicAE, LightweightDeterministicAE
-from .cnn_cse import CNN_CSE
 from .beta_vae_contrastive_model import BetaVAE_Contrastive
 from .beta_vae_features import BetaVAEWithFeatures
 
@@ -30,8 +28,6 @@ def get_model(architecture, **kwargs):
         'transformer': TransformerClassifier,
         'lightweight_transformer': LightweightTransformer,
         'cnn_transformer': CNNTransformerHybrid, """
-        'autoencoder': DeterministicAE,
-        'cnn_cse': CNN_CSE,
         'beta_vae_contrastive': BetaVAE_Contrastive,
         'beta_vae_features': BetaVAEWithFeatures
     }
