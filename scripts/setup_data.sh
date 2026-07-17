@@ -155,7 +155,7 @@ if [ ! -f "${DATA_ZIP}" ] || [ ! -f "${V47_ZIP}" ] || [ ! -f "${V49_ZIP}" ]; the
     echo "  - ${V49_ZIP}"
     exit 1
 fi
-echo -e "${GREEN}✓ All files present${NC}"
+echo -e "${GREEN} All files present${NC}"
 
 # Extract data.zip
 echo ""
@@ -163,7 +163,7 @@ echo -e "${GREEN}================================================${NC}"
 echo -e "${GREEN}Extracting data.zip to ${DATA_DIR}/${NC}"
 echo -e "${GREEN}================================================${NC}"
 unzip -q -o "${DATA_ZIP}" -d "${DATA_DIR}"
-echo -e "${GREEN}✓ data.zip extracted${NC}"
+echo -e "${GREEN} data.zip extracted${NC}"
 
 # Extract gencode_v47_experiments.zip
 echo ""
@@ -171,7 +171,7 @@ echo -e "${GREEN}================================================${NC}"
 echo -e "${GREEN}Extracting gencode_v47_experiments.zip${NC}"
 echo -e "${GREEN}================================================${NC}"
 unzip -q -o "${V47_ZIP}" -d "${EXPERIMENTS_DIR}"
-echo -e "${GREEN}✓ gencode_v47_experiments.zip extracted${NC}"
+echo -e "${GREEN} gencode_v47_experiments.zip extracted${NC}"
 
 # Extract gencode_v49_experiments.zip
 echo ""
@@ -179,7 +179,7 @@ echo -e "${GREEN}================================================${NC}"
 echo -e "${GREEN}Extracting gencode_v49_experiments.zip${NC}"
 echo -e "${GREEN}================================================${NC}"
 unzip -q -o "${V49_ZIP}" -d "${EXPERIMENTS_DIR}"
-echo -e "${GREEN}✓ gencode_v49_experiments.zip extracted${NC}"
+echo -e "${GREEN} gencode_v49_experiments.zip extracted${NC}"
 
 # Verify directory structure
 echo ""
@@ -189,9 +189,9 @@ echo -e "${GREEN}Verifying directory structure...${NC}"
 DATA_SUBDIRS=("cdhit_clusters" "dataset_biotypes" "lncRNABERT_results" "processed_features" "split_gencode_47" "split_gencode_49")
 for subdir in "${DATA_SUBDIRS[@]}"; do
     if [ -d "${DATA_DIR}/${subdir}" ]; then
-        echo -e "${GREEN}✓${NC} data/${subdir}/"
+        echo -e "${GREEN}${NC} data/${subdir}/"
     else
-        echo -e "${RED}✗${NC} data/${subdir}/ not found"
+        echo -e "${RED}${NC} data/${subdir}/ not found"
     fi
 done
 
@@ -199,7 +199,7 @@ done
 EXP_SUBDIRS=("beta_vae_contrastive_g47" "beta_vae_features_attn_g47" "beta_vae_features_g47" "cnn_g47" "stat_results")
 for subdir in "${EXP_SUBDIRS[@]}"; do
     if [ -d "${EXPERIMENTS_DIR}/${subdir}" ] || [ -d "${EXPERIMENTS_DIR}/gencode_v47_experiments/${subdir}" ]; then
-        echo -e "${GREEN}✓${NC} experiments/${subdir}/"
+        echo -e "${GREEN}${NC} experiments/${subdir}/"
     else
         echo -e "${YELLOW}?${NC} experiments/${subdir}/ (check manually)"
     fi

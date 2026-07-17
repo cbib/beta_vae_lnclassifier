@@ -230,7 +230,7 @@ def create_table_figure(df, output_path='benchmark_table.png', dpi=1200):
                 facecolor='white', edgecolor='none')
     plt.close()
     
-    print(f"✓ Table figure saved: {output_path} ({dpi} dpi)")
+    print(f" Table figure saved: {output_path} ({dpi} dpi)")
     print(f"  - Best values per column: BOLD")
     print(f"  - Second-best values: italic")
     
@@ -263,7 +263,7 @@ def process_cv_model(model_name, dataset, exp_dir):
             '_n_folds':           r.get('n_folds_ensembled', 1),
         }
     except Exception as e:
-        print(f"  ✗ Error processing {model_name} - {dataset}: {e}")
+        print(f"   Error processing {model_name} - {dataset}: {e}")
         return None
 
 
@@ -311,7 +311,7 @@ def process_lncrnabert(dataset, config):
             '_n_folds': 1
         }
     except Exception as e:
-        print(f"  ✗ Error processing lncRNA-BERT - {dataset}: {e}")
+        print(f"   Error processing lncRNA-BERT - {dataset}: {e}")
         return None
 
 
@@ -335,10 +335,6 @@ def create_benchmark_table(generate_figure=True, figure_dpi=1200):
             result = process_cv_model(model_name, dataset, exp_dir)
             if result:
                 results.append(result)
-                print("✓")
-            else:
-                print("✗")
-    
     # Process lncRNA-BERT
     print("\nProcessing lncRNA-BERT (zero-shot)...")
     for dataset, config in CONFIG['lncrnabert'].items():
@@ -346,12 +342,8 @@ def create_benchmark_table(generate_figure=True, figure_dpi=1200):
         result = process_lncrnabert(dataset, config)
         if result:
             results.append(result)
-            print("✓")
-        else:
-            print("✗")
-    
     if not results:
-        print("\n✗ No results processed! Check paths in CONFIG.")
+        print("\n No results processed! Check paths in CONFIG.")
         return None
     
     # Create DataFrame
@@ -379,7 +371,7 @@ def create_benchmark_table(generate_figure=True, figure_dpi=1200):
     df_display.to_csv(output_path, index=False)
     
     print(f"\n{'='*80}")
-    print(f"✓ Benchmark table saved to: {output_path}")
+    print(f" Benchmark table saved to: {output_path}")
     print(f"{'='*80}\n")
     
     # Display table
@@ -446,13 +438,13 @@ if __name__ == '__main__':
     
     if df is not None:
         print("\n" + "="*80)
-        print("✓ Benchmark table generation complete!")
+        print(" Benchmark table generation complete!")
         if generate_figure:
-            print(f"✓ High-resolution figure created at {figure_dpi} dpi")
+            print(f" High-resolution figure created at {figure_dpi} dpi")
         print("="*80)
         print("\nUsage:")
         print("  python benchmark_table_generator.py              # Generate CSV + figure (1200 dpi)")
         print("  python benchmark_table_generator.py --no-figure  # Generate CSV only")
         print("  python benchmark_table_generator.py --dpi 300    # Custom DPI")
     else:
-        print("\n✗ Table generation failed. Check paths and file locations.")
+        print("\n Table generation failed. Check paths and file locations.")

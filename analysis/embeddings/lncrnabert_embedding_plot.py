@@ -79,7 +79,7 @@ def create_tsne_visualization(
     print(f"Expected: ({len(df)}, 768)")
     
     if X.shape[1] != 768:
-        print(f"⚠️  WARNING: Expected 768 dimensions, got {X.shape[1]}")
+        print(f"  WARNING: Expected 768 dimensions, got {X.shape[1]}")
     
     # Check label column
     if 'label' not in df.columns:
@@ -92,7 +92,7 @@ def create_tsne_visualization(
     print(f"\nApplying t-SNE (perplexity={perplexity}, random_state={random_state})...")
     tsne = TSNE(n_components=2, random_state=random_state, perplexity=perplexity)
     X_tsne = tsne.fit_transform(X)
-    print("✓ t-SNE complete")
+    print(" t-SNE complete")
     
     # Create plot
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -130,7 +130,7 @@ def create_tsne_visualization(
     # Save figure
     output_path = output_dir / f'tsne_embeddings_gencode{gencode_version}.png'
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
-    print(f"\n✓ Figure saved to: {output_path}")
+    print(f"\n Figure saved to: {output_path}")
     
     plt.close()
     
@@ -141,7 +141,7 @@ def create_tsne_visualization(
     
     tsne_coords_path = output_dir / f'tsne_coordinates_gencode{gencode_version}.csv'
     tsne_df.to_csv(tsne_coords_path, index=True)
-    print(f"✓ t-SNE coordinates saved to: {tsne_coords_path}")
+    print(f" t-SNE coordinates saved to: {tsne_coords_path}")
 
 
 def main():

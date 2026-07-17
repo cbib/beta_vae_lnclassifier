@@ -87,7 +87,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            echo "❌ Unknown argument: $1"
+            echo " Unknown argument: $1"
             exit 1
             ;;
     esac
@@ -131,7 +131,7 @@ for arg_pair in "${REQUIRED_ARGS[@]}"; do
     arg_name="${arg_pair%%:*}"
     arg_flag="${arg_pair##*:}"
     if [ -z "${!arg_name}" ]; then
-        echo "❌ ERROR: ${arg_flag} is required"
+        echo " ERROR: ${arg_flag} is required"
     exit 1
     fi
 done

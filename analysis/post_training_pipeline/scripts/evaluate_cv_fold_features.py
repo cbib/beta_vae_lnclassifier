@@ -800,9 +800,9 @@ def main():
         print(f"  Label 1 (pc): {expected_label_counts[1]:,}")
 
         if val_label_counts == expected_label_counts:
-            print(f"  ✓ Label distributions match!")
+            print(f"   Label distributions match!")
         else:
-            print(f"  ✗ Label distributions DO NOT match!")
+            print(f"   Label distributions DO NOT match!")
 
         print(f"{'='*80}\n")
         

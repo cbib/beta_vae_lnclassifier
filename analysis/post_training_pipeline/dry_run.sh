@@ -71,7 +71,7 @@ while [[ $# -gt 0 ]]; do
         --new-pc) NEW_PC="$2"; shift 2 ;;
         --new-lnc) NEW_LNC="$2"; shift 2 ;;
         --comparison-output-dir) COMPARISON_OUTPUT_DIR="$2"; shift 2 ;;
-        *) echo -e "${RED}❌ Unknown argument: $1${NC}"; exit 1 ;;
+        *) echo -e "${RED} Unknown argument: $1${NC}"; exit 1 ;;
     esac
 done
 
@@ -91,27 +91,27 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 if [ -z "$EXPERIMENT_DIR" ]; then
-    echo -e "${RED}❌ Missing: --experiment_dir${NC}"
+    echo -e "${RED} Missing: --experiment_dir${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓${NC} --experiment_dir: $EXPERIMENT_DIR"
+    echo -e "${GREEN}${NC} --experiment_dir: $EXPERIMENT_DIR"
 fi
 
 if [ -z "$CONFIG" ]; then
-    echo -e "${RED}❌ Missing: --config${NC}"
+    echo -e "${RED} Missing: --config${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓${NC} --config: $CONFIG"
+    echo -e "${GREEN}${NC} --config: $CONFIG"
 fi
 
 if [ -z "$BIOTYPE_CSV" ]; then
-    echo -e "${RED}❌ Missing: --biotype_csv${NC}"
+    echo -e "${RED} Missing: --biotype_csv${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓${NC} --biotype_csv: $BIOTYPE_CSV"
+    echo -e "${GREEN}${NC} --biotype_csv: $BIOTYPE_CSV"
 fi
 
-echo -e "${GREEN}✓${NC} --n_folds: $N_FOLDS"
+echo -e "${GREEN}${NC} --n_folds: $N_FOLDS"
 
 echo ""
 
@@ -124,24 +124,24 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 if [ ! -f "$CONFIG" ]; then
-    echo -e "${RED}❌ Config file not found: $CONFIG${NC}"
+    echo -e "${RED} Config file not found: $CONFIG${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓${NC} Config file exists"
+    echo -e "${GREEN}${NC} Config file exists"
 fi
 
 if [ ! -f "$BIOTYPE_CSV" ]; then
-    echo -e "${RED}❌ Biotype CSV not found: $BIOTYPE_CSV${NC}"
+    echo -e "${RED} Biotype CSV not found: $BIOTYPE_CSV${NC}"
     ((ERRORS++))
 else
-    echo -e "${GREEN}✓${NC} Biotype CSV exists"
+    echo -e "${GREEN}${NC} Biotype CSV exists"
 fi
 
 if [ ! -d "$EXPERIMENT_DIR" ]; then
-    echo -e "${YELLOW}⚠️  Experiment directory will be created: $EXPERIMENT_DIR${NC}"
+    echo -e "${YELLOW}  Experiment directory will be created: $EXPERIMENT_DIR${NC}"
     ((WARNINGS++))
 else
-    echo -e "${GREEN}✓${NC} Experiment directory exists"
+    echo -e "${GREEN}${NC} Experiment directory exists"
 fi
 
 echo ""
@@ -161,10 +161,10 @@ if [ ${INCLUDE_GENCODE} -eq 1 ]; then
     GENCODE_REQUIRED=("OLD_VERSION" "NEW_VERSION" "OLD_FASTA" "OLD_PC" "OLD_LNC" "NEW_FASTA" "NEW_PC" "NEW_LNC")
     for arg in "${GENCODE_REQUIRED[@]}"; do
         if [ -z "${!arg}" ]; then
-            echo -e "${RED}❌ Missing GENCODE argument: --${arg,,}${NC}"
+            echo -e "${RED} Missing GENCODE argument: --${arg,,}${NC}"
             ((ERRORS++))
         else
-            echo -e "${GREEN}✓${NC} --${arg,,}: ${!arg}"
+            echo -e "${GREEN}${NC} --${arg,,}: ${!arg}"
         fi
     done
     
@@ -173,13 +173,13 @@ if [ ${INCLUDE_GENCODE} -eq 1 ]; then
     # Check FASTA files exist
     for FASTA in "$OLD_FASTA" "$OLD_PC" "$OLD_LNC" "$NEW_FASTA" "$NEW_PC" "$NEW_LNC"; do
         if [ -n "$FASTA" ] && [ ! -f "$FASTA" ]; then
-            echo -e "${RED}❌ FASTA file not found: $FASTA${NC}"
+            echo -e "${RED} FASTA file not found: $FASTA${NC}"
             ((ERRORS++))
         fi
     done
     
     if [ $ERRORS -eq 0 ]; then
-        echo -e "${GREEN}✓${NC} All GENCODE FASTA files exist"
+        echo -e "${GREEN}${NC} All GENCODE FASTA files exist"
     fi
 else
     echo -e "${YELLOW}GENCODE comparison disabled (use --include_gencode to enable)${NC}"
@@ -207,14 +207,14 @@ SCRIPTS=(
 for script in "${SCRIPTS[@]}"; do
     SCRIPT_PATH="$SCRIPT_DIR/$script"
     if [ ! -f "$SCRIPT_PATH" ]; then
-        echo -e "${RED}❌ Script not found: $SCRIPT_PATH${NC}"
+        echo -e "${RED} Script not found: $SCRIPT_PATH${NC}"
         ((ERRORS++))
     elif [ ! -x "$SCRIPT_PATH" ]; then
-        echo -e "${YELLOW}⚠️  Script not executable: $SCRIPT_PATH${NC}"
+        echo -e "${YELLOW}  Script not executable: $SCRIPT_PATH${NC}"
         echo -e "   Run: chmod +x $SCRIPT_PATH"
         ((WARNINGS++))
     else
-        echo -e "${GREEN}✓${NC} $script"
+        echo -e "${GREEN}${NC} $script"
     fi
 done
 
@@ -247,22 +247,22 @@ for item in "${PYTHON_SCRIPTS[@]}"; do
     if [ -L "$SYMLINK_PATH" ]; then
         TARGET=$(readlink "$SYMLINK_PATH")
         if [ -f "$TARGET" ]; then
-            echo -e "${GREEN}✓${NC} $SCRIPT_NAME (symlink → $TARGET)"
+            echo -e "${GREEN}${NC} $SCRIPT_NAME (symlink → $TARGET)"
         else
-            echo -e "${RED}❌ Broken symlink: $SYMLINK_PATH → $TARGET${NC}"
+            echo -e "${RED} Broken symlink: $SYMLINK_PATH → $TARGET${NC}"
             ((ERRORS++))
         fi
     elif [ -f "$SYMLINK_PATH" ]; then
-        echo -e "${GREEN}✓${NC} $SCRIPT_NAME (direct file)"
+        echo -e "${GREEN}${NC} $SCRIPT_NAME (direct file)"
     else
         # Check original location
         ORIGINAL_PATH="$EXPECTED_LOCATION$SCRIPT_NAME"
         if [ -f "$ORIGINAL_PATH" ]; then
-            echo -e "${YELLOW}⚠️  $SCRIPT_NAME exists at $ORIGINAL_PATH but symlink missing${NC}"
+            echo -e "${YELLOW}  $SCRIPT_NAME exists at $ORIGINAL_PATH but symlink missing${NC}"
             echo -e "   Run: ln -s ../../$ORIGINAL_PATH $SYMLINK_PATH"
             ((WARNINGS++))
         else
-            echo -e "${RED}❌ $SCRIPT_NAME not found (expected at $ORIGINAL_PATH)${NC}"
+            echo -e "${RED} $SCRIPT_NAME not found (expected at $ORIGINAL_PATH)${NC}"
             ((ERRORS++))
         fi
     fi
@@ -378,20 +378,20 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
-    echo -e "${GREEN}${BOLD}✓ ALL CHECKS PASSED${NC}"
+    echo -e "${GREEN}${BOLD} ALL CHECKS PASSED${NC}"
     echo ""
     echo "You can now run:"
     echo "  bash analysis/post_training_pipeline/run_all.sh [same arguments]"
     EXIT_CODE=0
 elif [ $ERRORS -eq 0 ]; then
-    echo -e "${YELLOW}${BOLD}⚠️  PASSED WITH WARNINGS${NC}"
+    echo -e "${YELLOW}${BOLD}  PASSED WITH WARNINGS${NC}"
     echo ""
     echo "Warnings: $WARNINGS"
     echo ""
     echo "You can run the pipeline, but consider fixing warnings first."
     EXIT_CODE=0
 else
-    echo -e "${RED}${BOLD}❌ VALIDATION FAILED${NC}"
+    echo -e "${RED}${BOLD} VALIDATION FAILED${NC}"
     echo ""
     echo "Errors: $ERRORS"
     echo "Warnings: $WARNINGS"

@@ -181,16 +181,16 @@ def verify_sequence_order(sequences: List[SeqRecord],
         if cv_tid != dataset_tid:
             mismatches += 1
             if mismatches <= 5:
-                print(f"  ⚠️  MISMATCH at index {i}:")
+                print(f"    MISMATCH at index {i}:")
                 print(f"      CV splits: {cv_tid} ({labels[i]})")
                 print(f"      Dataset:   {dataset_tid}")
     
     if mismatches == 0:
-        print("  ✓ Sequence order verified (first 100 sequences match)")
+        print("   Sequence order verified (first 100 sequences match)")
         print("="*80 + "\n")
         return True
     else:
-        print(f"\n  ✗ FATAL ERROR: Found {mismatches} mismatches in first 100 sequences!")
+        print(f"\n   FATAL ERROR: Found {mismatches} mismatches in first 100 sequences!")
         print("  This means CV splits and dataset are using DIFFERENT orderings!")
         print("  Training/evaluation results will be INVALID!")
         print("="*80 + "\n")

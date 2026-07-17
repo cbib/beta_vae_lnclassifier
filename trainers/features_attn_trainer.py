@@ -197,7 +197,7 @@ class SingleFoldFeaturesAttentionTrainer:
         print(f"  query_proj delta after {n_batches} steps: std={delta_std:.2e}")
         if delta_std < 1e-6:
             raise RuntimeError(f"query_proj weights did not move (delta std={delta_std:.2e}).")
-        print(f"  ✓ Attention gradients healthy — proceeding with training.\n")
+        print(f"   Attention gradients healthy — proceeding with training.\n")
 
     def get_current_beta(self, epoch):
         if epoch >= self.kl_anneal_epochs:
@@ -368,7 +368,7 @@ class BetaVAEFeaturesAttentionTrainer:
         overlap   = train_ids & val_ids
         print(f"Train={len(train_ids)} Val={len(val_ids)} Overlap={len(overlap)}")
         if overlap:
-            print(f"⚠️  WARNING: {len(overlap)} overlapping transcripts!")
+            print(f"  WARNING: {len(overlap)} overlapping transcripts!")
 
         batch_size  = self.config.get('training', 'batch_size')
         num_workers = self.config.get('training', 'num_workers', default=1)

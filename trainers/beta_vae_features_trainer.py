@@ -453,7 +453,7 @@ class BetaVAEFeaturesTrainer:
         print(f"Overlap: {len(overlap)} transcripts")
         
         if len(overlap) > 0:
-            print(f"⚠️ WARNING: {len(overlap)} transcripts in BOTH train and val!")
+            print(f" WARNING: {len(overlap)} transcripts in BOTH train and val!")
             print(f"Sample overlaps: {list(overlap)[:5]}")
         
         # Create dataloaders

@@ -102,31 +102,31 @@ def process_version_data(fasta_file, pc_file, lnc_file, version_label):
     # Load full transcript dataset
     start = time.time()
     all_transcripts = load_sequences(fasta_file, as_dict=True)
-    print(f"  ✓ Loaded {version_label}_fasta: {len(all_transcripts)} sequences in {time.time()-start:.2f}s")
+    print(f"   Loaded {version_label}_fasta: {len(all_transcripts)} sequences in {time.time()-start:.2f}s")
 
     # Create dataframe with info extracted from IDs
     start = time.time()
     df = parse_gencode_ids(list(all_transcripts.keys()), to_df=True)
     df.rename(columns={col: f"{version_label}_{col}" for col in df.columns}, inplace=True)
-    print(f"  ✓ Parsed IDs and created dataframe in {time.time()-start:.2f}s")
+    print(f"   Parsed IDs and created dataframe in {time.time()-start:.2f}s")
 
     # Load pc and lncRNA transcripts
     start = time.time()
     pc_transcripts = simple_load_ids(pc_file)
     _, _, pc_clean_ids, _ = parse_gencode_ids(list(pc_transcripts))
-    print(f"  ✓ Loaded {version_label}_pc: {len(pc_transcripts)} sequences in {time.time()-start:.2f}s")
+    print(f"   Loaded {version_label}_pc: {len(pc_transcripts)} sequences in {time.time()-start:.2f}s")
     
     start = time.time()
     lnc_transcripts = simple_load_ids(lnc_file)
     _, _, lnc_clean_ids, _ = parse_gencode_ids(list(lnc_transcripts))
-    print(f"  ✓ Loaded {version_label}_lnc: {len(lnc_transcripts)} sequences in {time.time()-start:.2f}s")
+    print(f"   Loaded {version_label}_lnc: {len(lnc_transcripts)} sequences in {time.time()-start:.2f}s")
 
     # Classify transcripts
     start = time.time()
     df[f"{version_label}_class"] = "NA"
     df.loc[df.index.isin(pc_clean_ids), f"{version_label}_class"] = "pc"
     df.loc[df.index.isin(lnc_clean_ids), f"{version_label}_class"] = "lncRNA"
-    print(f"  ✓ Classified transcripts in {time.time()-start:.2f}s")
+    print(f"   Classified transcripts in {time.time()-start:.2f}s")
     
     print(f"  Total for {version_label}: {time.time()-loop_start:.2f}s")
     
@@ -227,7 +227,7 @@ def export_categories(combined_df, new_fasta, output_dir, old_version, new_versi
     # Update TSV filename to include version numbers
     comparison_file = os.path.join(output_dir, f"gencode_v{old_version}_v{new_version}_comparison.tsv")
     combined_df.to_csv(comparison_file, sep="\t")
-    print(f"✓ Saved comparison to {comparison_file}")
+    print(f" Saved comparison to {comparison_file}")
     
     # Load new sequences for extraction
     new_sequences = load_sequences(new_fasta, as_dict=True)
@@ -256,7 +256,7 @@ def export_categories(combined_df, new_fasta, output_dir, old_version, new_versi
                 seqs_to_write.append(new_sequences[seq_id])
         
         write_sequences(seqs_to_write, output_fasta)
-        print(f"  ✓ Written {len(seqs_to_write)} sequences to {output_fasta}")
+        print(f"   Written {len(seqs_to_write)} sequences to {output_fasta}")
 
 
 def main():
@@ -306,7 +306,7 @@ def main():
     combined_df = old_df.join(new_df, how="outer")
     
     print(f"{'=' * 60}")
-    print(f"✓ Processing complete! Combined dataframe shape: {combined_df.shape}")
+    print(f" Processing complete! Combined dataframe shape: {combined_df.shape}")
     print(f"{'=' * 60}")
     
     # Analyze differences

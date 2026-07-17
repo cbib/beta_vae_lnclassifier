@@ -638,7 +638,7 @@ def main():
         if checkpoint_path.exists():
             print(f"    Fold {fold_idx}: {checkpoint_path}")
         else:
-            print(f"  ✗ Fold {fold_idx}: NOT FOUND")
+            print(f"   Fold {fold_idx}: NOT FOUND")
             missing_folds.append(fold_idx)
     
     if missing_folds:
