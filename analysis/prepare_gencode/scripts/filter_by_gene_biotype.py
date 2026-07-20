@@ -65,7 +65,7 @@ def filter_by_gene_biotype(
     print(f"\nTop 15 gene biotypes:")
     for gene_biotype, count in gene_biotype_counts.head(15).items():
         pct = 100 * count / len(df)
-        marker = " " if gene_biotype in keep_gene_biotypes else "✗"
+        marker = " " if gene_biotype in keep_gene_biotypes else ""
         print(f"  {marker} {gene_biotype:45s}: {count:>8,} ({pct:>5.2f}%)")
     
     # Filter

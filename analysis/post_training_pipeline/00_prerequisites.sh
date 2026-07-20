@@ -102,7 +102,7 @@ if [ -n "$BIOTYPE_CSV" ]; then
         if [ $line_count -gt 1 ]; then
             echo "  Lines: $line_count"
         else
-            echo "  ⚠ WARNING: Biotype CSV appears empty"
+            echo "   WARNING: Biotype CSV appears empty"
             WARNINGS=$((WARNINGS + 1))
         fi
     else

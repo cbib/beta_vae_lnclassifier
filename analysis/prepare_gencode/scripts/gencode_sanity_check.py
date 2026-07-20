@@ -191,7 +191,7 @@ def check_id_format(sequences, n_samples=10):
     
     # Check if pipe-delimited
     has_pipe = all('|' in seq.id for seq in sequences[:100])
-    print(f"\nPipe-delimited format: {'  Yes' if has_pipe else '✗ No'}")
+    print(f"\nPipe-delimited format: {'  Yes' if has_pipe else ' No'}")
     
     if has_pipe:
         # Extract base IDs
@@ -202,7 +202,7 @@ def check_id_format(sequences, n_samples=10):
             
         # Check version numbers
         has_version = all('.' in base_id for base_id in base_ids)
-        print(f"\nVersion numbers present: {'  Yes' if has_version else '✗ No'}")
+        print(f"\nVersion numbers present: {'  Yes' if has_version else ' No'}")
         
         if has_version:
             print("\nNote: Biotype CSV should use transcript IDs WITH version numbers")

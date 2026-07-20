@@ -50,7 +50,7 @@ Training (main_contrastive.py)
 
 ---
 
-## Requirements #TODO
+## Requirements
 
 ### Software
 - Python 3.10+
