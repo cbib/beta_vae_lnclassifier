@@ -7,7 +7,7 @@ from lncrnapy.evaluate import lncRNA_classification_report
 
 # Load the predictions and true labels, then print the classification report.
 
-pred = pd.read_csv('g47_lncRNABERT_results/g47_lncRNABERT_results.csv')['class']
+pred = pd.read_csv('data/lncRNABERT_results/g47_lncRNABERT_results.csv')['class']
 
 true = Data(['data/split_gencode_47/pc_test.fa',
              'data/split_gencode_47/lnc_test.fa']).df['label']
@@ -16,9 +16,15 @@ print(lncRNA_classification_report(
     true, pred, 'lncRNA-BERT (3-mer)', 'GENCODE47 (Test)'
 ))
 
+# Save the classification report to a file.
+with open('lncRNABERT_test_results.txt', 'w') as f:
+    f.write(lncRNA_classification_report(
+        true, pred, 'lncRNA-BERT (3-mer)', 'GENCODE47 (Test)'
+    ))
+
 # Repeat for GENCODE49
 
-pred = pd.read_csv('g49_lncRNABERT_results/g49_lncRNABERT_results.csv')['class']
+pred = pd.read_csv('data/lncRNABERT_results/g49_lncRNABERT_results.csv')['class']
 
 true = Data(['data/split_gencode_49/pc_test.fa',
              'data/split_gencode_49/lnc_test.fa']).df['label']
@@ -26,3 +32,10 @@ true = Data(['data/split_gencode_49/pc_test.fa',
 print(lncRNA_classification_report(
     true, pred, 'lncRNA-BERT (3-mer)', 'GENCODE49 (Test)'
 ))
+
+# Save the classification report to a file.
+
+with open('lncRNABERT_test_results.txt', 'w') as f:
+    f.write(lncRNA_classification_report(
+        true, pred, 'lncRNA-BERT (3-mer)', 'GENCODE49 (Test)'
+    ))
