@@ -9,6 +9,8 @@ from .transformer import TransformerClassifier, LightweightTransformer
 from .cnn_transformer import CNNTransformerHybrid """
 from .beta_vae_contrastive_model import BetaVAE_Contrastive
 from .beta_vae_features import BetaVAEWithFeatures
+from .beta_vae_subgroup import BetaVAESubgroup
+from .feature_only_classifier import FeatureOnlyClassifier
 
 
 def get_model(architecture, **kwargs):
@@ -29,7 +31,9 @@ def get_model(architecture, **kwargs):
         'lightweight_transformer': LightweightTransformer,
         'cnn_transformer': CNNTransformerHybrid, """
         'beta_vae_contrastive': BetaVAE_Contrastive,
-        'beta_vae_features': BetaVAEWithFeatures
+        'beta_vae_features': BetaVAEWithFeatures,
+        'beta_vae_subgroup': BetaVAESubgroup,
+        'feature_only': FeatureOnlyClassifier,
     }
     
     if architecture not in models:
@@ -76,6 +80,14 @@ def get_contrastive_model(architecture, **kwargs):
     elif architecture == 'beta_vae_features_attn':
         from models.beta_vae_features_attn import BetaVAEWithFeaturesAttention
         return BetaVAEWithFeaturesAttention(**kwargs)
+    
+    elif architecture == 'beta_vae_subgroup':
+        from models.beta_vae_subgroup import BetaVAESubgroup
+        return BetaVAESubgroup(**kwargs)
+    
+    elif architecture == 'feature_only':
+        from models.feature_only_classifier import FeatureOnlyClassifier
+        return FeatureOnlyClassifier(**kwargs)
     
     else:
         raise ValueError(f"Unknown architecture for contrastive learning: {architecture}")
