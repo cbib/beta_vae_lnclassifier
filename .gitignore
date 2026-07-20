@@ -38,3 +38,10 @@ lncrnapy/
 *.swp
 *.swo
 .DS_Store
+
+# Benchmark
+cpat/
+LncDC*
+cpc2/
+Orthrus*
+rnasamba*
