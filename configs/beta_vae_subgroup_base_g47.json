@@ -1,0 +1,87 @@
+{
+  "_comment": "Baseline — standard MH attention, no head diversity mechanism",
+  "model": {
+    "architecture":     "beta_vae_subgroup",
+    "attn_mode":        "standard",
+    "input_dim":        5,
+    "max_length":       15000,
+    "latent_dim":       128,
+    "beta":             4.0,
+    "num_classes":      2,
+    "dropout_rate":     0.4,
+    "use_cse":          true,
+    "cse_d_model":      512,
+    "cse_kernel_size":  9,
+    "d_proj":           64,
+    "fusion_dropout":   0.1,
+    "classifier_hidden":[128],
+    "attn_heads":       4,
+    "attn_dropout":     0.1,
+    "attn_temperature": 4.0,
+    "use_token_sa":     false,
+    "token_sa_heads":   4,
+    "token_sa_layers":  1
+  },
+  "data": {
+    "lnc_fasta":      "data/split_gencode_47/lnc_trainval.fa",
+    "pc_fasta":       "data/split_gencode_47/pc_trainval.fa",
+    "lnc_test_fasta": "data/split_gencode_47/lnc_test.fa",
+    "pc_test_fasta":  "data/split_gencode_47/pc_test.fa",
+
+    "te_genomic_csv":   "data/processed_features_genomic/g47_te_features_clean.csv",
+    "te_processed_csv": "data/processed_features/g47_te_features_clean.csv",
+    "te_scaler_bank_path": "data/processed_features_genomic/g47_te_scaler_bank.pkl",
+
+    "nonb_genomic_csv":   "data/processed_features_genomic/g47_nonb_features_clean.csv",
+    "nonb_processed_csv": "data/processed_features/g47_nonb_features_clean.csv",
+    "nonb_scaler_bank_path": "data/processed_features_genomic/g47_nonb_scaler_bank.pkl",
+
+    "nonb2_csv":              "data/processed_features_genomic/g47_nonb2_features_clean.csv",
+    "nonb2_scaler_bank_path":"data/processed_features_genomic/g47_nonb2_scaler_bank.pkl"
+  },
+  "training": {
+    "batch_size":               256,
+    "num_epochs":               30,
+    "learning_rate":            0.0001,
+    "weight_decay":             0.001,
+    "alpha":                    0.02,
+    "beta":                     0.0,
+    "kl_anneal_epochs":         20,
+    "kl_anneal_end":            4.0,
+    "gamma_classification":     1.0,
+    "lambda_recon":             1.0,
+    "gamma_attn":               0.0,
+    "reconstruction_loss":      "mse",
+    "early_stopping_patience":  10,
+    "n_folds":                  5,
+    "random_state":             42,
+    "n_bins":                   5,
+    "num_workers":              1,
+    "lambda_feat_nonb":         1.0,
+    "lambda_feat_te":           0.5,
+    "lambda_feat_nonb2":        0.5,
+    "lambda_conc":              0.1,
+    "lambda_ortho":             0.0,
+    "lambda_contrast":          0.1,
+    "contrast_temperature":     0.1,
+    "contrast_min_pairs":       4,
+    "lambda_adv":               0.1,
+    "adv_gamma":                10.0,
+    "adv_warmup_epochs":        5,
+    "min_per_group":            4
+  },
+  "optimizer": {
+    "type":  "Adam",
+    "betas": [0.9, 0.999]
+  },
+  "scheduler": {
+    "type":     "ReduceLROnPlateau",
+    "mode":     "min",
+    "factor":   0.5,
+    "patience": 5,
+    "min_lr":   1e-06
+  },
+  "output": {
+    "experiment_name": "gencode_v47_experiments/beta_vae_subgroup_base_g47"
+  }
+}

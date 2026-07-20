@@ -1,0 +1,78 @@
+{
+  "_comment": "Feature-only classifier — no sequence encoder. Used for sequence-free ablation.",
+
+  "model": {
+    "architecture":     "feature_only",
+    "num_classes":      2,
+    "d_proj":           64,
+    "fusion_dropout":   0.1,
+    "attn_heads":       4,
+    "attn_dropout":     0.1,
+    "attn_temperature": 4.0,
+    "attn_mode":        "standard",
+    "classifier_hidden":[128],
+    "dropout_rate":     0.3,
+    "input_dim":        5,
+    "max_length":       15000
+  },
+
+  "data": {
+    "lnc_fasta":      "data/split_gencode_47/lnc_trainval.fa",
+    "pc_fasta":       "data/split_gencode_47/pc_trainval.fa",
+    "lnc_test_fasta": "data/split_gencode_47/lnc_test.fa",
+    "pc_test_fasta":  "data/split_gencode_47/pc_test.fa",
+
+    "te_genomic_csv":   "data/processed_features_genomic/g47_te_features_clean.csv",
+    "te_processed_csv": "data/processed_features/g47_te_features_clean.csv",
+    "te_scaler_bank_path": "data/processed_features_genomic/g47_te_scaler_bank.pkl",
+
+    "nonb_genomic_csv":   "data/processed_features_genomic/g47_nonb_features_clean.csv",
+    "nonb_processed_csv": "data/processed_features/g47_nonb_features_clean.csv",
+    "nonb_scaler_bank_path": "data/processed_features_genomic/g47_nonb_scaler_bank.pkl",
+
+    "nonb2_csv":              null,
+    "nonb2_scaler_bank_path":null
+  },
+
+  "training": {
+    "batch_size":               256,
+    "num_epochs":               30,
+    "learning_rate":            0.0001,
+    "weight_decay":             0.001,
+    "alpha":                    0.0,
+    "beta":                     0.0,
+    "kl_anneal_epochs":         1,
+    "kl_anneal_end":            0.0,
+    "gamma_classification":     1.0,
+    "lambda_recon":             0.0,
+    "gamma_attn":               0.0,
+    "reconstruction_loss":      "mse",
+    "early_stopping_patience":  10,
+    "n_folds":                  5,
+    "random_state":             42,
+    "n_bins":                   5,
+    "num_workers":              1,
+    "lambda_feat_nonb":         1.0,
+    "lambda_feat_te":           0.5,
+    "lambda_feat_nonb2":        0.0,
+    "lambda_conc":              0.1,
+    "lambda_ortho":             0.0
+  },
+
+  "optimizer": {
+    "type":  "Adam",
+    "betas": [0.9, 0.999]
+  },
+
+  "scheduler": {
+    "type":     "ReduceLROnPlateau",
+    "mode":     "min",
+    "factor":   0.5,
+    "patience": 5,
+    "min_lr":   1e-06
+  },
+
+  "output": {
+    "experiment_name": "gencode_v47_experiments/feature_only_g47_wo_nonb2"
+  }
+}
