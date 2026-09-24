@@ -192,8 +192,13 @@ commands inside them directly if SLURM isn't available.
 ## Post-training interpretability pipeline
 
 BetaVAESubgroup's post-training analysis implements a three-layer
-interpretability framework. See `analysis/pattern/README.md` for the full pipeline and script-by-script
-usage.
+interpretability framework: model-functional (attention, ablation),
+associational (Fréchet distance, pattern alignment), and causal
+(activation patching, with both a continuous effect-size metric and
+Interchange Intervention Accuracy — the stricter test of whether an
+intervention actually flips the model's decision — plus a multi-token
+search for synergy between subgroups). See `analysis/pattern/README.md`
+for the full pipeline and script-by-script usage.
 
 ### Earlier post-training pipeline (UMAP / spatial clustering / biotype enrichment)
 
@@ -216,8 +221,12 @@ bash analysis/benchmark/run_full_benchmark.sh \
 ```
 
 Compares against CPAT, CPC2, LncDC, RNAsamba, Orthrus (4-track), and
-lncRNA-BERT. See `analysis/benchmark/hard_for_all/` for the cross-method
-hard-case analysis (transcripts misclassified by every benchmarked method).
+lncRNA-BERT, reporting accuracy/precision/recall/F1 with 95% bootstrap
+confidence intervals (10,000 resamples) and AUC with 95% DeLong CI per
+method. See `analysis/benchmark/README.md` for the full pipeline and
+`analysis/benchmark/hard_for_all/` for the cross-method hard-case
+analysis (transcripts hard for every benchmarked method, or a
+configurable subset — see that README for the threshold option).
 
 ---
 
