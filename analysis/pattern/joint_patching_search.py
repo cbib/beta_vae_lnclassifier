@@ -69,7 +69,7 @@ Output
 Usage
 -----
 python analysis/pattern/joint_patching_search.py \\
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \\
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
     --config          configs/beta_vae_subgroup_base_g49.json \\
     --fold            0 \\
     --single_summary  gencode_v49_experiments/.../patching_summary.csv \\

@@ -80,7 +80,7 @@ bash analysis/benchmark/run_full_benchmark.sh \
     --pc_fasta        data/split_gencode_49/pc_test.fa \
     --train_lnc_fasta data/split_gencode_49/lnc_trainval.fa \
     --train_pc_fasta  data/split_gencode_49/pc_trainval.fa \
-    --blnc_predictions gencode_v49_experiments/beta_vae_subgroup_base_g49_new/evaluation_csvs/test_predictions.csv \
+    --blnc_predictions gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs/test_predictions.csv \
     --feature_only_csv gencode_v49_experiments/feature_only_g49_new/evaluation_csvs/test_predictions.csv \
     --lncrnabert_csv  gencode_v49_experiments/benchmark_tools/lncrnabert_test_predictions.csv \
     --orthrus_env     {$HOME}.conda/envs/orthrus \
@@ -104,7 +104,7 @@ bash analysis/benchmark/run_benchmark_tools.sh \
 
 ```bash
 python analysis/benchmark/compute_benchmark_ci.py \
-    --blnc_csv        gencode_v49_experiments/beta_vae_subgroup_base_g49_new/evaluation_csvs/test_predictions.csv \
+    --blnc_csv        gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs/test_predictions.csv \
     --feature_only_csv gencode_v49_experiments/feature_only_g49_new/evaluation_csvs/test_predictions.csv \
     --cpat_csv        gencode_v49_experiments/benchmark_tools/cpat/predictions_with_cpat.csv \
     --cpc2_tsv        gencode_v49_experiments/benchmark_tools/cpc2_results.tsv.txt \

@@ -14,7 +14,7 @@ patch_mode == "single", from patch_tokens_v2.py) and produces:
 Usage
 -----
 python plot_patching_symmetry.py \
-    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching/patching_summary.csv \
+    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
     --output_dir   gencode_v49_experiments/benchmark_comparison \
     --release      v49 \
     --display_names

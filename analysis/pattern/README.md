@@ -75,9 +75,9 @@ read those outputs and produce the summary figures.
 
 ```bash
 python analysis/pattern/extract_representations.py \
-    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49_new \
+    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config         configs/beta_vae_subgroup_base_g49.json \
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49_new/representations \
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
     --device         cuda:0
 ```
 
@@ -88,7 +88,7 @@ python analysis/pattern/analyze_mstar.py \
     --features_dir data/processed_features_genomic \
     --release      v49 \
     --output_dir   gencode_v49_experiments/mstar_analysis \
-    --pattern_raw_csv gencode_v49_experiments/beta_vae_subgroup_base_g49_new/latent_probing/cross_fold_pattern_raw.csv
+    --pattern_raw_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv
 ```
 
 `--pattern_raw_csv` is optional — omit it to skip `frechet_vs_pattern.png`
@@ -98,8 +98,8 @@ python analysis/pattern/analyze_mstar.py \
 
 ```bash
 python analysis/pattern/analyze_latent_probing.py \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49_new/representations \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/latent_probing \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing \
     --model_label     "β-LNC" \
     --gencode_version v49 \
     --n_permutations  1000
@@ -119,9 +119,9 @@ With more than one fold present, this also writes cross-fold summaries
 
 ```bash
 python analysis/pattern/analyze_subgroup_ablation.py \
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/ablation \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation \
     --gencode_version v49 \
     --device          cuda:0
 ```
@@ -130,10 +130,10 @@ python analysis/pattern/analyze_subgroup_ablation.py \
 
 ```bash
 python analysis/pattern/analyze_residual_ablation.py \
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49_new/representations \
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/residual_ablation \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \
     --gencode_version v49 \
     --device          cuda:0
 ```
@@ -142,9 +142,9 @@ python analysis/pattern/analyze_residual_ablation.py \
 
 ```bash
 python analysis/pattern/patch_tokens.py \
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/patching \
     --device          cuda:0 \
     --n_pairs         200 \
     --min_confidence  0.7 \
@@ -168,11 +168,11 @@ score and IIA per subgroup, per scope).
 
 ```bash
 python analysis/pattern/joint_patching_search.py \
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
     --fold            all \
-    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching/all_folds_patching.csv \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/joint_patching \
+    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching \
     --device          cuda:0 \
     --n_pairs         1000 \
     --mode            both \
@@ -194,11 +194,11 @@ since block membership constrains which subgroups can be patched together.
 ```bash
 python analysis/pattern/plot_interpretability_main.py \
     --frechet_csv          gencode_v49_experiments/mstar_analysis/frechet_ranking.csv \
-    --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49_new/ablation/analysis/all_folds_ablation.csv \
-    --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/latent_probing/cross_fold_pattern_raw.csv \
-    --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49_new/latent_probing/cross_fold_pattern_residual.csv \
-    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching/all_folds_patching.csv \
-    --greedy_all_folds     gencode_v49_experiments/beta_vae_subgroup_base_g49_new/joint_patching/joint_patching_greedy_all_folds.csv \
+    --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation/analysis/all_folds_ablation.csv \
+    --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv \
+    --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_residual.csv \
+    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
+    --greedy_all_folds     gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching/joint_patching_greedy_all_folds.csv \
     --output_dir           gencode_v49_experiments/benchmark_comparison \
     --release              v49
 ```
@@ -213,7 +213,7 @@ panel:
 
 ```bash
 python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching/patching_summary.csv \
+    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
     --output_dir   gencode_v49_experiments/benchmark_comparison \
     --release      v49 \
     --display_names \
@@ -226,7 +226,7 @@ curve. For a cross-release comparison, add a second release's summary:
 
 ```bash
 python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv  gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching/patching_summary.csv \
+    --patching_csv  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
     --patching_csv2 gencode_v47_experiments/beta_vae_subgroup_base_g47_new/patching/patching_summary.csv \
     --release       v49 --release2 v47 \
     --output_dir    gencode_v49_experiments/benchmark_comparison \

@@ -217,7 +217,7 @@ bash analysis/benchmark/run_full_benchmark.sh \
     --base_dir gencode_v49_experiments \
     --lnc_fasta data/split_gencode_49/lnc_test.fa \
     --pc_fasta  data/split_gencode_49/pc_test.fa \
-    --blnc_predictions gencode_v49_experiments/beta_vae_subgroup_base_g49_new/evaluation_csvs/test_predictions.csv
+    --blnc_predictions gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs/test_predictions.csv
 ```
 
 Compares against CPAT, CPC2, LncDC, RNAsamba, Orthrus (4-track), and

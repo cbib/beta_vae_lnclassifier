@@ -55,9 +55,9 @@ Schema additions vs. the original all_folds_patching.csv:
 Usage
 -----
 python analysis/pattern/patch_tokens_v2.py \\
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49_new \\
+    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
     --config          configs/beta_vae_subgroup_base_g49.json \\
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49_new/patching_v2 \\
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/patching_v2 \\
     --device          cuda:0 \\
     --n_pairs         200 \\
     --min_confidence  0.7 \\
