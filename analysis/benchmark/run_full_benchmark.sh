@@ -293,6 +293,14 @@ if [[ ! -f "$PREDICTIONS_MERGED" ]]; then
 fi
 
 # =============================================================================
+# Stage 2.5 — compute_benchmark_ci.py
+# =============================================================================
+log_section "Stage 2.5/3 — compute_benchmark_ci.py"
+
+log "Command: python ${SCRIPT_DIR}/compute_benchmark_ci.py ${COMPARE_ARGS[*]} --n_bootstrap 10000"
+python "${SCRIPT_DIR}/compute_benchmark_ci.py" "${COMPARE_ARGS[@]}" --n_bootstrap 10000 2>&1 | tee -a "$LOG_FILE"
+
+# =============================================================================
 # Stage 3 — upset_benchmark.py
 # =============================================================================
 log_section "Stage 3/3 — upset_benchmark.py"
