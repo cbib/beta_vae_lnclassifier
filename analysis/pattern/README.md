@@ -255,7 +255,7 @@ related.
 
 **Fréchet distance decomposition:**
 
-$$FD^2 = \underbrace{\|\mu_1-\mu_2\|_2^2}_{\text{mean term}} \; + \; \underbrace{\text{Tr}\!\left(\Sigma_1+\Sigma_2-2(\Sigma_1\Sigma_2)^{1/2}\right)}_{\text{covariance term}}$$
+$$FD^2 = \underbrace{\|\mu_1-\mu_2\|_2^2}_{\text{mean term}}  +  \underbrace{\text{Tr}\left(\Sigma_1+\Sigma_2-2(\Sigma_1\Sigma_2)^{1/2}\right)}_{\text{covariance term}}$$
 
 Unlike scalar SNR/M*, this captures class-conditional covariance
 differences — the source of signal for distributional suppressor
@@ -278,7 +278,7 @@ the fraction of valid trials (baseline correctly classified on the source
 side) where patching actually **flipped** the predicted class, not merely
 shifted the logit toward it:
 
-$$\text{IIA}_s = \frac{\#\{\text{trials where patching flipped the prediction}\}}{\#\{\text{trials with a valid baseline}\}}$$
+$$\text{IIA}_s = \frac{\{\text{trials where patching flipped the prediction}\}}{\{\text{trials with a valid baseline}\}}$$
 
 Reported per direction and as an overall mean (`iia_overall`). A subgroup
 can show a nonzero symmetry score (partial shift) with near-zero IIA
