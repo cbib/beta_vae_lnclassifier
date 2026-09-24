@@ -28,9 +28,9 @@ This provides:
 
 Usage
 -----
-python src/analyze_mstar.py \\
-    --config         configs/beta_vae_subgroup_base_g49.json \\
-    --output_dir     gencode_v49_experiments/mstar_analysis \\
+python analysis/pattern/analyze_mstar.py \
+    --config         configs/beta_vae_subgroup_base_g49.json \
+    --output_dir     gencode_v49_experiments/mstar_analysis \
     --n_top_eigen    5
 
 Output
@@ -405,6 +405,8 @@ def plot_within_class_covariance(
     vmax = max(np.abs(lda_result["Sigma_lnc"]).max(),
                np.abs(lda_result["Sigma_mrna"]).max())
 
+    tick_colors = [_sg_edge(sg) for sg in ALL_SUBGROUPS]
+
     for ax, mat, title in zip(
         axes,
         [lda_result["Sigma_lnc"], lda_result["Sigma_mrna"]],
@@ -416,15 +418,20 @@ def plot_within_class_covariance(
         ax.set_yticks(range(len(ALL_SUBGROUPS)))
         ax.set_xticklabels(display_subgroups(ALL_SUBGROUPS), rotation=90, fontsize=8)
         ax.set_yticklabels(display_subgroups(ALL_SUBGROUPS), fontsize=8)
+        for tick, color in zip(ax.get_xticklabels(), tick_colors):
+            tick.set_color(color)
+        for tick, color in zip(ax.get_yticklabels(), tick_colors):
+            tick.set_color(color)
         ax.set_title(title, fontsize=11, fontweight="bold")
         plt.colorbar(im, ax=ax, shrink=0.8)
 
-        # Mark NonB/TE boundary
+        # Mark boundary — must be inside the panel loop so both
+        # panels get the boundary lines, not just the last one drawn
         offset = 0
-    for bn in REGISTRY.block_names[:-1]:
-        offset += len(REGISTRY.block_subgroups(bn))
-        ax.axhline(offset - 0.5, color="white", lw=1.5)
-        ax.axvline(offset - 0.5, color="white", lw=1.5)
+        for bn in REGISTRY.block_names[:-1]:
+            offset += len(REGISTRY.block_subgroups(bn))
+            ax.axhline(offset - 0.5, color="white", lw=1.5)
+            ax.axvline(offset - 0.5, color="white", lw=1.5)
 
     fig.suptitle("Within-class Sub-group Covariance Structure",
                  fontsize=13, fontweight="bold")
@@ -724,13 +731,98 @@ def plot_frechet_ranking(
     ax.set_xticklabels(display_subgroups(ordered_names), rotation=45, ha="right", fontsize=10)
     ax.set_ylabel("Fréchet distance (W₂² between class Gaussians)", fontsize=11)
     ax.set_title(
-        "Sub-group Fréchet Distance — Multi-dimensional Discrimination (mean shift + covariance difference; captures what M* cannot)",
+        "Sub-group Fréchet Distance — Multi-dimensional Discrimination "
+        "(mean shift + covariance difference)",
         fontsize=12, fontweight="bold"
     )
     ax.legend(fontsize=11)
     ax.grid(True, axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close()
+    print(f"  Saved: {output_path}")
+
+
+def plot_frechet_vs_pattern(
+    fd_df:              pd.DataFrame,   # subgroup, block, frechet_dist, mean_term, cov_term
+    pattern_raw_df:     pd.DataFrame,   # subgroup, mean_align, std_align
+    output_path:        Path,
+    divergence_frechet_quantile: float = 0.6,
+    divergence_align_threshold: float = 0.1,
+) -> None:
+    """
+    Two-panel comparison, shared x-axis sorted by Fréchet distance:
+    top = Fréchet distance (mean shift + covariance term, stacked),
+    bottom = raw pattern-weight alignment (cosine similarity).
+
+    A subgroup is marked with an asterisk in the bottom panel when its
+    Fréchet distance is in the top (1 - divergence_frechet_quantile)
+    fraction AND its mean raw alignment is below divergence_align_threshold
+    — i.e. a subgroup the associational layer's more rigorous method
+    (Fréchet) flags as discriminative, but the cheaper pattern-alignment
+    check would have missed.
+    """
+    df = fd_df.merge(pattern_raw_df, on="subgroup", how="left")
+    df = df.sort_values("frechet_dist", ascending=False).reset_index(drop=True)
+    names = df["subgroup"].tolist()
+
+    edge_colors = [BLOCK_EDGES[REGISTRY.token_block(sg)] for sg in names]
+    face_colors = [BLOCK_COLORS[REGISTRY.token_block(sg)] for sg in names]
+
+    x = np.arange(len(names))
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(13, 8), sharex=True,
+        gridspec_kw={"height_ratios": [1.3, 1]},
+    )
+    fig.patch.set_facecolor("white")
+
+    ax1.bar(x, df["mean_term"], label="Mean shift (||Δμ||²)",
+            color="#4A90D9AA", edgecolor="none")
+    ax1.bar(x, df["cov_term"], bottom=df["mean_term"],
+            label="Covariance term", color="#EF9F27AA", edgecolor="none")
+    for xi, edge in zip(x, edge_colors):
+        ax1.get_children()[xi].set_edgecolor(edge)
+        ax1.get_children()[xi].set_linewidth(0.8)
+    ax1.set_ylabel("Fréchet distance (W₂²)", fontsize=11)
+    ax1.set_title(
+        "Associational Layer: Fréchet Distance vs Pattern Alignment",
+        fontsize=13, fontweight="bold"
+    )
+    ax1.legend(fontsize=9, loc="upper right")
+    ax1.grid(True, axis="y", alpha=0.3)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+
+    ax2.bar(x, df["mean_align"], color=face_colors, edgecolor=edge_colors,
+            linewidth=0.8, alpha=0.9)
+    if "std_align" in df.columns:
+        ax2.errorbar(x, df["mean_align"], yerr=df["std_align"],
+                    fmt="none", color="black", capsize=3, linewidth=1.0)
+    ax2.axhline(0, color="black", linewidth=1)
+    ax2.set_ylabel("Pattern alignment\n(cosine similarity, raw)", fontsize=11)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(display_subgroups(names), rotation=45, ha="right", fontsize=9)
+    ax2.grid(True, axis="y", alpha=0.3)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+
+    fd_threshold = df["frechet_dist"].quantile(divergence_frechet_quantile)
+    for xi, row in zip(x, df.itertuples()):
+        if (row.frechet_dist > fd_threshold
+                and abs(row.mean_align) < divergence_align_threshold):
+            y = row.mean_align + (row.std_align if "std_align" in df.columns else 0)
+            ax2.annotate("*", (xi, y), textcoords="offset points", xytext=(0, 4),
+                        ha="center", fontsize=15, fontweight="bold", color="#C0392B")
+
+    fig.text(
+        0.5, -0.02,
+        "* high Fréchet distance, low pattern alignment — flagged by the "
+        "associational layer, missed by naive pattern alignment",
+        fontsize=9, color="#C0392B", ha="center",
+    )
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor="white")
@@ -1040,6 +1132,10 @@ def main():
     parser.add_argument("--output_dir",   required=True)
     parser.add_argument("--n_top_eigen",  type=int, default=5,
                         help="Number of top eigenvectors to plot")
+    parser.add_argument("--pattern_raw_csv", default=None,
+                        help="Path to cross_fold_pattern_raw.csv "
+                             "(from analyze_latent_probing.py) — if given, "
+                             "also produces frechet_vs_pattern.png")
     args = parser.parse_args()
 
     config     = load_config(args.config)
@@ -1239,6 +1335,18 @@ def main():
                          output_dir / "frechet_ranking.png")
     plot_frechet_vs_mstar(frechet_result, profiles_df,
                           output_dir / "frechet_vs_mstar.png")
+
+    if args.pattern_raw_csv is not None:
+        pattern_raw_path = Path(args.pattern_raw_csv)
+        if pattern_raw_path.exists():
+            pattern_raw_df = pd.read_csv(pattern_raw_path)
+            plot_frechet_vs_pattern(
+                fd_df, pattern_raw_df,
+                output_dir / "frechet_vs_pattern.png",
+            )
+        else:
+            print(f"\n--pattern_raw_csv given but not found at "
+                  f"{pattern_raw_path} — skipping frechet_vs_pattern plot")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     top_snr_sg  = snr_df.iloc[0]["subgroup"]
