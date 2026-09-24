@@ -51,9 +51,11 @@ from scipy.stats import fisher_exact
 # ---------------------------------------------------------------------------
 
 def load_merged(predictions_csv: str, blnc_csv: str | None,
-                error_only: bool) -> pd.DataFrame:
+                error_only: bool, min_hard_methods: int | None = None) -> pd.DataFrame:
     df = pd.read_csv(predictions_csv)
-    df["transcript_id"] = df["transcript_id"].astype(str).str.split("|").str[0]
+    df["transcript_id"] = (df["transcript_id"].astype(str)
+                           .str.split("|").str[0]
+                           .str.split(".").str[0])
 
     hard_cols = [c for c in df.columns if c.endswith("_hard")]
     # Fill NaN → False (unmatched transcripts not hard)
@@ -63,7 +65,8 @@ def load_merged(predictions_csv: str, blnc_csv: str | None,
     if error_only and blnc_csv and "blnc_hard" in df.columns:
         blnc_raw = pd.read_csv(blnc_csv)
         blnc_raw["transcript_id"] = (blnc_raw["transcript_id"].astype(str)
-                                     .str.split("|").str[0])
+                                     .str.split("|").str[0]
+                                     .str.split(".").str[0])
         error_map = blnc_raw.set_index("transcript_id")["error_rate"].gt(0)
         df["blnc_hard"] = df["transcript_id"].map(error_map).fillna(False)
         print(f"  β-LNC hard recomputed from error_rate: "
@@ -73,7 +76,8 @@ def load_merged(predictions_csv: str, blnc_csv: str | None,
     if blnc_csv:
         blnc_raw = pd.read_csv(blnc_csv)
         blnc_raw["transcript_id"] = (blnc_raw["transcript_id"].astype(str)
-                                     .str.split("|").str[0])
+                                     .str.split("|").str[0]
+                                     .str.split(".").str[0])
         conf_map = blnc_raw.set_index("transcript_id")["mean_confidence"]
         err_map  = blnc_raw.set_index("transcript_id")["error_rate"]
         df["blnc_confidence"] = df["transcript_id"].map(conf_map)
@@ -82,16 +86,19 @@ def load_merged(predictions_csv: str, blnc_csv: str | None,
     # Group labels
     df["n_hard_methods"] = df[hard_cols].sum(axis=1)
     n_methods = len(hard_cols)
+    threshold = min_hard_methods if min_hard_methods is not None else n_methods
     df["group"] = "hard_some"
     df.loc[df["n_hard_methods"] == 0,          "group"] = "easy_all"
-    df.loc[df["n_hard_methods"] == n_methods,  "group"] = "hard_all"
+    df.loc[df["n_hard_methods"] >= threshold,  "group"] = "hard_all"
 
     return df, hard_cols
 
 
 def load_biotypes(biotype_csv: str) -> pd.DataFrame:
     bio = pd.read_csv(biotype_csv)
-    bio["transcript_id"] = bio["transcript_id"].astype(str).str.split("|").str[0]
+    bio["transcript_id"] = (bio["transcript_id"].astype(str)
+                            .str.split("|").str[0]
+                            .str.split(".").str[0])
     return bio.set_index("transcript_id")
 
 
@@ -168,6 +175,14 @@ def main():
                         help="Recompute β-LNC hard flag from error_rate only")
     parser.add_argument("--min_biotype_count", type=int, default=10,
                         help="Min background count to include biotype (default 10)")
+    parser.add_argument("--min_hard_methods",  type=int, default=None,
+                        help="Minimum number of methods that must flag a "
+                             "transcript as hard for it to count as "
+                             "'hard_all' (default: full unanimity, i.e. "
+                             "all methods present). Use to relax the "
+                             "threshold when a release has zero transcripts "
+                             "at strict unanimity but a meaningful cluster "
+                             "just below it.")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -180,11 +195,15 @@ def main():
     # ── Load data ─────────────────────────────────────────────────────────────
     print("\nLoading predictions...")
     df, hard_cols = load_merged(
-        args.predictions_csv, args.blnc_csv, args.error_only
+        args.predictions_csv, args.blnc_csv, args.error_only,
+        min_hard_methods=args.min_hard_methods,
     )
     n_methods = len(hard_cols)
+    threshold = args.min_hard_methods if args.min_hard_methods is not None else n_methods
     print(f"  {len(df):,} transcripts, {n_methods} methods")
     print(f"  Hard cols: {hard_cols}")
+    print(f"  hard_all threshold: >= {threshold}/{n_methods} methods"
+          + (" (relaxed)" if threshold < n_methods else " (full unanimity)"))
 
     g = df.groupby("group").size()
     print(f"\n  easy_all   : {g.get('easy_all',  0):>6,}  ({100*g.get('easy_all',  0)/len(df):.1f}%)")
