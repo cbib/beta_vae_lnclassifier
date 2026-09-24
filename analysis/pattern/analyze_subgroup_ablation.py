@@ -16,11 +16,11 @@ feature_zero : zeros the raw input features before the projector
 
 Usage
 -----
-python analysis/pattern/analyze_subgroup_ablation.py \\
-    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
-    --config         configs/beta_vae_subgroup_base_g49.json \\
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation_analysis \\
-    --model_label    "β-VAE Standard" \\
+python analysis/pattern/analyze_subgroup_ablation.py \
+    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --config         configs/beta_vae_subgroup_base_g49.json \
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation_analysis \
+    --model_label    "β-VAE" \
     --gencode_version v49
 """
 
@@ -320,7 +320,11 @@ def plot_ablation_results(df: pd.DataFrame, output_path: Path,
 
 def plot_cross_fold_summary(summary_df: pd.DataFrame, output_path: Path,
                             fig_tag: str = '') -> None:
-    """Cross-fold mean ± std accuracy drop per sub-group."""
+    """Cross-fold mean ± std accuracy drop per sub-group, with a
+    Benjamini-Hochberg FDR-corrected one-sample t-test (acc_drop vs 0)
+    per subgroup."""
+    from scipy import stats
+
     for mode in ['token_zero', 'feature_zero']:
         mode_df = summary_df[summary_df['mode'] == mode]
         if mode_df.empty:
@@ -329,6 +333,20 @@ def plot_cross_fold_summary(summary_df: pd.DataFrame, output_path: Path,
         pivot = mode_df.pivot(index='subgroup', columns='fold', values='acc_drop')
         mean  = pivot.mean(axis=1).sort_values(ascending=False)
         std   = pivot.std(axis=1).reindex(mean.index)
+
+        n_tests = len(mean)
+        raw_pvals = pivot.reindex(mean.index).apply(
+            lambda row: stats.ttest_1samp(row.dropna(), 0.0).pvalue
+            if row.dropna().size > 1 else np.nan,
+            axis=1,
+        )
+        valid = raw_pvals.notna()
+        qvals = pd.Series(np.nan, index=raw_pvals.index)
+        if valid.sum() > 0:
+            qvals[valid] = stats.false_discovery_control(
+                raw_pvals[valid].values, method='bh'
+            )
+        sig = qvals < 0.05
 
         fig, ax = plt.subplots(figsize=(13, 5))
         x = np.arange(len(mean))
@@ -339,13 +357,26 @@ def plot_cross_fold_summary(summary_df: pd.DataFrame, output_path: Path,
         ax.errorbar(x, mean.values, yerr=std.values,
                     fmt='none', color='black', capsize=3, linewidth=1.2)
 
+        y_range = mean.values.max() - mean.values.min()
+        fixed_offset = 0.06 * y_range
+        for xi, m, s, is_sig in zip(x, mean.values, std.values, sig.values):
+            if is_sig:
+                y_star = m + s + fixed_offset if m >= 0 else s + fixed_offset
+                ax.annotate('*', (xi, y_star), ha='center', va='bottom',
+                            fontsize=14, fontweight='bold')
+
+        # Give the star row room rather than letting it clip at the top
+        ymin, ymax = ax.get_ylim()
+        ax.set_ylim(ymin, ymax + 0.08 * y_range)
+
         ax.axhline(0, color='black', linewidth=1)
         ax.set_xticks(x)
         ax.set_xticklabels(display_subgroups(list(mean.index)), rotation=45, ha='right', fontsize=10)
         ax.set_ylabel('Mean accuracy drop (mean ± std over folds)', fontsize=11)
         ax.set_title(
             f'{fig_tag}Cross-Fold Ablation — {mode.replace("_", " ").title()}\n'
-            'Sub-groups ranked by mean importance',
+            f'Sub-groups ranked by mean importance  '
+            f'(* q < 0.05, Benjamini-Hochberg FDR, n={n_tests})',
             fontsize=13, fontweight='bold'
         )
         ax.grid(True, axis='y', alpha=0.3)
@@ -357,6 +388,15 @@ def plot_cross_fold_summary(summary_df: pd.DataFrame, output_path: Path,
         plt.savefig(out, dpi=350, bbox_inches='tight')
         plt.close()
         print(f"  Saved: {out}")
+
+        stats_out = output_path.parent / f'cross_fold_ablation_{mode}_stats.csv'
+        stats_df = pd.DataFrame({
+            'subgroup': mean.index, 'mean_acc_drop': mean.values,
+            'std_acc_drop': std.values, 'p_value': raw_pvals.values,
+            'q_value_bh': qvals.values, 'significant_fdr': sig.values,
+        })
+        stats_df.to_csv(stats_out, index=False)
+        print(f"  Saved: {stats_out}")
 
 
 # ---------------------------------------------------------------------------

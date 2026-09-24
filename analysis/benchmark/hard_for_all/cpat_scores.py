@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-analyze_hard_for_all_cpat.py
+cpat_scores.py
 
 CPAT-based feature analysis for the hard-for-all transcript groups,
 comparing them against the full test set background by biotype class
@@ -25,14 +25,14 @@ Outputs (per release, written to --output_dir)
 Usage
 -----
 # Single release
-python analysis/benchmark/analyze_hard_for_all_cpat.py \\
+python analysis/benchmark/cpat_scores.py \\
     --hard_csv   gencode_v47_experiments/benchmark_comparison/hard_for_all/hard_for_all_transcripts.csv \\
     --cpat_csv   gencode_v47_experiments/benchmark_tools/cpat/predictions_with_cpat.csv \\
     --output_dir gencode_v47_experiments/benchmark_comparison/hard_for_all \\
     --release    v47
 
 # Both releases in one call
-python analysis/benchmark/analyze_hard_for_all_cpat.py \\
+python analysis/benchmark/cpat_scores.py \\
     --hard_csv   gencode_v47_experiments/benchmark_comparison/hard_for_all/hard_for_all_transcripts.csv \\
     --cpat_csv   gencode_v47_experiments/benchmark_tools/cpat/predictions_with_cpat.csv \\
     --output_dir gencode_v47_experiments/benchmark_comparison/hard_for_all \\
@@ -77,12 +77,14 @@ GROUP_ORDER = [
 def load_and_merge(hard_csv: str, cpat_csv: str) -> pd.DataFrame:
     hard = pd.read_csv(hard_csv)
     hard["transcript_id"] = (hard["transcript_id"].astype(str)
-                             .str.split("|").str[0])
+                             .str.split("|").str[0]
+                             .str.split(".").str[0])
     hard_ids = set(hard["transcript_id"])
 
     cpat = pd.read_csv(cpat_csv)
     cpat["transcript_id"] = (cpat["transcript_id"].astype(str)
-                             .str.split("|").str[0])
+                             .str.split("|").str[0]
+                             .str.split(".").str[0])
 
     # Merge group label from hard_csv
     cpat = cpat.merge(
@@ -163,6 +165,22 @@ def run_analysis(df: pd.DataFrame, release: str) -> tuple[pd.DataFrame, pd.DataF
             ))
 
     summary_df = pd.DataFrame(rows)
+
+    # Benjamini-Hochberg FDR correction across this call's tests (one
+    # release: n_features * 2 labels). If comparing across releases
+    # together, correct across the combined set instead — this corrects
+    # only within a single release's tests, since run_analysis is called
+    # once per release.
+    valid = summary_df["p_mannwhitney"].notna()
+    q_vals = pd.Series(np.nan, index=summary_df.index)
+    if valid.sum() > 0:
+        from scipy.stats import false_discovery_control
+        q_vals[valid] = false_discovery_control(
+            summary_df.loc[valid, "p_mannwhitney"].values, method='bh'
+        )
+    summary_df["q_value_bh"] = q_vals
+    summary_df["significant_fdr"] = summary_df["q_value_bh"] < 0.05
+
     return summary_df, hard_all_df
 
 
@@ -194,8 +212,8 @@ def print_summary(summary_df: pd.DataFrame, release: str) -> str:
 
             p_str = f"{row['p_mannwhitney']:.2e}" if not np.isnan(
                 row["p_mannwhitney"]) else "       N/A"
-            sig = " *" if (not np.isnan(row["p_mannwhitney"]) and
-                           row["p_mannwhitney"] < 0.05) else ""
+            sig = " *" if (not np.isnan(row.get("q_value_bh", np.nan)) and
+                           row["q_value_bh"] < 0.05) else ""
 
             lines.append(
                 f"  {row['feature_label']:<30} "

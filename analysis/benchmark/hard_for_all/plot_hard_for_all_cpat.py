@@ -192,12 +192,11 @@ def _draw_panel(ax, summary, per_trans, cpat_full, feature, release,
         boxplot(ax, x_hard, row["hard_q25"], row["hard_median"], row["hard_q75"],
                 c_hard, alpha=0.85)
 
-    sig_bracket(ax, x_bg, x_hard, row["p_mannwhitney"], ylim)
+    sig_bracket(ax, x_bg, x_hard, row.get("q_value_bh", row["p_mannwhitney"]), ylim)
 
     n_hard = int(row["hard_n"])
-    y_n = ylim[0] + (ylim[1]-ylim[0]) * 0.02
-    ax.text(x_hard, y_n, f"n={n_hard}", ha="center", va="bottom",
-            fontsize=6.0, color="#555555")
+    ax.annotate(f"n={n_hard}", xy=(0.97, 0.03), xycoords="axes fraction",
+                ha="right", va="bottom", fontsize=6.0, color="#555555")
 
     ax.set_xticks([x_bg, x_hard])
     ax.set_xticklabels(["bg", "hard"], fontsize=7.5)
@@ -216,7 +215,8 @@ def _draw_panel(ax, summary, per_trans, cpat_full, feature, release,
 
 # ── Figure — portrait (original): rows=features, cols=releases×class-pairs ──
 
-def make_figure_portrait(summary, per_trans, cpat_full, releases, output_dir):
+def make_figure_portrait(summary, per_trans, cpat_full, releases, output_dir,
+                         min_hard_methods=None, n_methods_total=7):
     n_feat = len(FEATURE_ORDER)
     n_rel  = len(releases)
 
@@ -268,11 +268,12 @@ def make_figure_portrait(summary, per_trans, cpat_full, releases, output_dir):
                     boxplot(ax, x_hard, row["hard_q25"], row["hard_median"], row["hard_q75"],
                             c_hard, alpha=0.85)
 
-                sig_bracket(ax, x_bg, x_hard, row["p_mannwhitney"], ylim)
+                sig_bracket(ax, x_bg, x_hard, row.get("q_value_bh", row["p_mannwhitney"]), ylim)
                 n_hard = int(row["hard_n"])
-                y_n = ylim[0] + (ylim[1]-ylim[0]) * 0.02
-                ax.text(x_hard, y_n, f"n={n_hard}", ha="center", va="bottom",
-                        fontsize=6.0, color="#555555")
+                x_frac = 0.22 if x_hard < 2.6 else 0.78
+                ax.annotate(f"n={n_hard}", xy=(x_frac, 0.03),
+                            xycoords="axes fraction",
+                            ha="center", va="bottom", fontsize=6.0, color="#555555")
 
             ax.axvline(2.6, color="#cccccc", lw=0.6, ls="--", zorder=0)
             ax.set_xticks([1.45, 3.75])
@@ -290,13 +291,16 @@ def make_figure_portrait(summary, per_trans, cpat_full, releases, output_dir):
 
             ax.tick_params(axis="y", labelsize=7.5)
 
-    _add_legend_and_save(fig, output_dir, "cpat_hard_for_all_figure")
+    _add_legend_and_save(fig, output_dir, "cpat_hard_for_all_figure",
+                        min_hard_methods=min_hard_methods,
+                        n_methods_total=n_methods_total)
 
 
 # ── Figure — landscape: rows=class (mRNA/lncRNA), cols=features ───────────────
 # Intended for single-release, wide poster layouts.
 
-def make_figure_landscape(summary, per_trans, cpat_full, release, output_dir):
+def make_figure_landscape(summary, per_trans, cpat_full, release, output_dir,
+                          min_hard_methods=None, n_methods_total=7):
     n_feat = len(FEATURE_ORDER)
 
     TARGET_RATIO = 14 / 6   # 2.333
@@ -329,22 +333,41 @@ def make_figure_landscape(summary, per_trans, cpat_full, release, output_dir):
             rotation=90,
         )
 
-    _add_legend_and_save(fig, output_dir, f"cpat_hard_for_all_figure_{release}_landscape")
+    _add_legend_and_save(fig, output_dir, f"cpat_hard_for_all_figure_{release}_landscape",
+                        min_hard_methods=min_hard_methods,
+                        n_methods_total=n_methods_total)
 
 
-def _add_legend_and_save(fig, output_dir, filename_stem):
+def _hard_label(min_hard_methods, n_methods_total):
+    """Returns the phrase used in the legend and title for the hard group,
+    reflecting whatever threshold was actually used upstream — 'hard-for-all'
+    only when min_hard_methods is None (full unanimity) or equals
+    n_methods_total; otherwise a phrase naming the actual threshold."""
+    if min_hard_methods is None or min_hard_methods >= n_methods_total:
+        return "hard-for-all", "Hard-for-all"
+    return (f"hard for \u2265{min_hard_methods}/{n_methods_total} methods",
+            f"Hard (\u2265{min_hard_methods}/{n_methods_total})")
+
+
+def _add_legend_and_save(fig, output_dir, filename_stem,
+                         min_hard_methods=None, n_methods_total=7):
+    title_phrase, legend_phrase = _hard_label(min_hard_methods, n_methods_total)
+
     patches = [
         mpatches.Patch(facecolor=C["bg_mrna"],   alpha=0.55, label="Background mRNA"),
-        mpatches.Patch(facecolor=C["hard_mrna"],  alpha=0.85, label="Hard-for-all mRNA"),
+        mpatches.Patch(facecolor=C["hard_mrna"],  alpha=0.85, label=f"{legend_phrase} mRNA"),
         mpatches.Patch(facecolor=C["bg_lnc"],  alpha=0.55, label="Background lncRNA"),
-        mpatches.Patch(facecolor=C["hard_lnc"], alpha=0.85, label="Hard-for-all lncRNA"),
+        mpatches.Patch(facecolor=C["hard_lnc"], alpha=0.85, label=f"{legend_phrase} lncRNA"),
     ]
     fig.legend(handles=patches, loc="upper center",
                bbox_to_anchor=(0.5, 0.99), ncol=4,
                fontsize=7.5, frameon=False,
                handlelength=1.1, handletextpad=0.4, columnspacing=1.2)
-    fig.suptitle("CPAT sequence features: hard-for-all vs background",
-                 fontsize=10.5, fontweight="bold", y=1.03)
+    fig.suptitle(
+        f"CPAT sequence features: {title_phrase} vs background\n"
+        "(*/**/*** = q < 0.05/0.01/0.001, Benjamini-Hochberg FDR, per release)",
+        fontsize=10.5, fontweight="bold", y=1.03
+    )
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -376,6 +399,19 @@ def main():
              "landscape: rows=class (mRNA/lncRNA), cols=features — "
              "for a single release in a wide poster row. "
              "landscape requires exactly one release (via --releases)."
+    )
+    parser.add_argument(
+        "--min_hard_methods", type=int, default=None,
+        help="Threshold used upstream in analyze_hard_for_all.py to "
+             "define the hard group (e.g. 6 for >=6/7 methods). Stated "
+             "in the figure title; if omitted, the title says 'hard-for-all' "
+             "(full unanimity) — set this explicitly whenever a relaxed "
+             "threshold was used, so the title doesn't overstate unanimity."
+    )
+    parser.add_argument(
+        "--n_methods_total", type=int, default=7,
+        help="Total number of methods the threshold is out of (default 7), "
+             "used together with --min_hard_methods to phrase the title."
     )
     args = parser.parse_args()
 
@@ -412,11 +448,15 @@ def main():
         make_figure_landscape(
             summary=summary, per_trans=per_trans, cpat_full=cpat_full,
             release=releases[0], output_dir=args.output_dir,
+            min_hard_methods=args.min_hard_methods,
+            n_methods_total=args.n_methods_total,
         )
     else:
         make_figure_portrait(
             summary=summary, per_trans=per_trans, cpat_full=cpat_full,
             releases=releases, output_dir=args.output_dir,
+            min_hard_methods=args.min_hard_methods,
+            n_methods_total=args.n_methods_total,
         )
 
     print("Done.")

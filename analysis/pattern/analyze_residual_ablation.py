@@ -42,13 +42,13 @@ comparison scripts and plots.
 
 Usage
 -----
-python analysis/pattern/analyze_residual_ablation.py \\
-    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
-    --repr_dir       gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \\
-    --config         configs/beta_vae_subgroup_base_g49.json \\
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \\
-    --model_label    "β-VAE Standard" \\
-    --gencode_version v49 \\
+python analysis/pattern/analyze_residual_ablation.py \
+    --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --repr_dir       gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --config         configs/beta_vae_subgroup_base_g49.json \
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \
+    --model_label    "β-VAE" \
+    --gencode_version v49 \
     --device         cuda:0
 """
 
@@ -458,22 +458,46 @@ def plot_comparison(
     fig_tag:         str = "",
 ) -> None:
     """
-    Side-by-side comparison: feature_zero vs residual_zero cross-fold means.
-    Sub-groups ordered by residual_zero mean drop.
+    Side-by-side comparison: feature_zero vs residual_zero cross-fold means,
+    with a Benjamini-Hochberg FDR-corrected paired t-test per subgroup
+    (feature_zero acc_drop vs residual_zero acc_drop, matched by fold).
     """
-    fz = (feature_zero_df[feature_zero_df["mode"] == "feature_zero"]
-          .groupby("subgroup")["acc_drop"].mean()
-          .rename("feature_zero"))
-    rz = (residual_df.groupby("subgroup")["acc_drop"].mean()
-          .rename("residual_zero"))
-    fz_std = (feature_zero_df[feature_zero_df["mode"] == "feature_zero"]
-              .groupby("subgroup")["acc_drop"].std()
-              .rename("fz_std"))
-    rz_std = (residual_df.groupby("subgroup")["acc_drop"].std()
-              .rename("rz_std"))
+    from scipy import stats
+
+    fz_pivot = (feature_zero_df[feature_zero_df["mode"] == "feature_zero"]
+                .pivot(index="subgroup", columns="fold", values="acc_drop"))
+    rz_pivot = (residual_df.pivot(index="subgroup", columns="fold", values="acc_drop"))
+
+    fz = fz_pivot.mean(axis=1).rename("feature_zero")
+    rz = rz_pivot.mean(axis=1).rename("residual_zero")
+    fz_std = fz_pivot.std(axis=1).rename("fz_std")
+    rz_std = rz_pivot.std(axis=1).rename("rz_std")
 
     combined = pd.concat([fz, rz, fz_std, rz_std], axis=1).fillna(0)
     combined = combined.sort_values("residual_zero", ascending=False)
+
+    common_subgroups = [sg for sg in combined.index
+                        if sg in fz_pivot.index and sg in rz_pivot.index]
+
+    raw_pvals = {}
+    for sg in common_subgroups:
+        fz_vals = fz_pivot.loc[sg].dropna()
+        rz_vals = rz_pivot.loc[sg].dropna()
+        common_folds = fz_vals.index.intersection(rz_vals.index)
+        if len(common_folds) > 1:
+            raw_pvals[sg] = stats.ttest_rel(fz_vals[common_folds],
+                                            rz_vals[common_folds]).pvalue
+        else:
+            raw_pvals[sg] = np.nan
+    raw_pval_series = pd.Series(raw_pvals).reindex(combined.index)
+
+    valid = raw_pval_series.notna()
+    qval_series = pd.Series(np.nan, index=raw_pval_series.index)
+    if valid.sum() > 0:
+        qval_series[valid] = stats.false_discovery_control(
+            raw_pval_series[valid].values, method='bh'
+        )
+    sig = qval_series < 0.05
 
     x     = np.arange(len(combined))
     width = 0.35
@@ -492,13 +516,30 @@ def plot_comparison(
                 yerr=combined["rz_std"],
                 fmt="none", color="black", capsize=3, linewidth=1.0)
 
+    combined_vals = combined[["feature_zero", "residual_zero"]].values
+    y_range = combined_vals.max() - combined_vals.min()
+    fixed_offset = 0.06 * y_range
+    for xi, m1, s1, m2, s2, is_sig in zip(
+        x, combined["feature_zero"], combined["fz_std"],
+        combined["residual_zero"], combined["rz_std"], sig.values,
+    ):
+        if is_sig:
+            top = max(m1 + s1, m2 + s2)
+            y_star = top + fixed_offset
+            ax.annotate('*', (xi, y_star), ha='center', va='bottom',
+                        fontsize=14, fontweight='bold')
+
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(ymin, ymax + 0.08 * y_range)
+
     ax.axhline(0, color="black", linewidth=1)
     ax.set_xticks(x)
     ax.set_xticklabels(display_subgroups(list(combined.index)), rotation=45, ha="right", fontsize=10)
     ax.set_ylabel("Mean accuracy drop (cross-fold)", fontsize=12)
     ax.set_title(
         f"{fig_tag}Feature Zero vs Residual Zero — Cross-Fold Comparison\n"
-        "(residual_zero isolates sequence-independent contribution)",
+        f"(residual_zero isolates sequence-independent contribution)  "
+        f"(* q < 0.05, Benjamini-Hochberg FDR paired t-test, n={len(common_subgroups)})",
         fontsize=13, fontweight="bold"
     )
     ax.legend(fontsize=11)
@@ -509,6 +550,18 @@ def plot_comparison(
     plt.savefig(output_path, dpi=350, bbox_inches="tight")
     plt.close()
     print(f"  Saved: {output_path}")
+
+    stats_out = output_path.parent / "feature_vs_residual_comparison_stats.csv"
+    stats_df = pd.DataFrame({
+        "subgroup": combined.index,
+        "feature_zero_mean": combined["feature_zero"].values,
+        "residual_zero_mean": combined["residual_zero"].values,
+        "p_value_paired": raw_pval_series.values,
+        "q_value_bh": qval_series.values,
+        "significant_fdr": sig.values,
+    })
+    stats_df.to_csv(stats_out, index=False)
+    print(f"  Saved: {stats_out}")
 
 
 # ---------------------------------------------------------------------------
