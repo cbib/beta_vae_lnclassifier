@@ -192,8 +192,8 @@ commands inside them directly if SLURM isn't available.
 ## Post-training interpretability pipeline
 
 BetaVAESubgroup's post-training analysis implements a three-layer
-interpretability framework: model-functional (attention, ablation),
-associational (Fréchet distance, pattern alignment), and causal
+interpretability framework: diagnostics (attention, ablation),
+associational (Fréchet distance, pattern alignment), and inteventional
 (activation patching, with both a continuous effect-size metric and
 Interchange Intervention Accuracy — the stricter test of whether an
 intervention actually flips the model's decision — plus a multi-token

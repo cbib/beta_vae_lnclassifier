@@ -22,30 +22,30 @@ Training (main_subgroup.py / main_subgroup_debug.py)
     • Optional: --pattern_raw_csv also produces frechet_vs_pattern.png, flagging
       subgroups the associational layer catches that naive pattern alignment misses
     ↓
-[3] analyze_latent_probing.py                 (model-functional layer)
+[3] analyze_latent_probing.py                 (diagnostics layer)
     Stage 1 — probe z for length / GC / class confounds
     Stage 2 — sequence-feature redundancy: R² from z to each token's variance,
               with an optional permutation-test significance check (BH-FDR)
     Stage 3 — pattern-weight alignment (Haufe et al. 2014), raw and z-residual,
               with a paired t-test (raw vs residual, BH-FDR) per subgroup
     ↓
-[4] analyze_subgroup_ablation.py               (model-functional layer)
+[4] analyze_subgroup_ablation.py               (diagnostics layer)
     • Token-zero and feature-zero ablation, per subgroup, per fold
     • One-sample t-test (acc_drop vs 0, BH-FDR) per subgroup
     ↓
-[5] analyze_residual_ablation.py               (model-functional layer)
+[5] analyze_residual_ablation.py               (diagnostics layer)
     • Feature-zero ablation on z-orthogonalized tokens
     • Isolates sequence-independent ablation importance
     • Paired t-test (feature_zero vs residual_zero, BH-FDR) per subgroup
     ↓
-[6] patch_tokens.py                            (causal layer)
+[6] patch_tokens.py                            (interventional layer)
     • In-distribution token activation patching, matched lncRNA/mRNA pairs
     • Scopes: single subgroup / block / all tokens / shuffled-pair null control
     • Symmetry score: continuous effect size, both patch directions
     • IIA (Interchange Intervention Accuracy): stricter, discrete — did
       patching actually flip the predicted class, not just shift the logit
     ↓
-[7] joint_patching_search.py                   (causal layer, follow-up)
+[7] joint_patching_search.py                   (interventional layer, follow-up)
     • Greedy and top-k multi-token search: does a COMBINATION of subgroups
       patch jointly better than the fixed single/block/all scopes predict
       from an independence baseline? Reveals synergy the fixed scopes can't.
@@ -138,7 +138,7 @@ python analysis/pattern/analyze_residual_ablation.py \
     --device          cuda:0
 ```
 
-### Step 6 — Token activation patching (causal layer)
+### Step 6 — Token activation patching (interventional layer)
 
 ```bash
 python analysis/pattern/patch_tokens.py \
@@ -164,7 +164,7 @@ score and IIA per subgroup, per scope).
   length/GC-matched partner, testing whether IIA reflects genuine
   pair-specific structure or just class-conditional signal
 
-### Step 7 — Joint multi-token search (causal layer, follow-up)
+### Step 7 — Joint multi-token search (interventional layer, follow-up)
 
 ```bash
 python analysis/pattern/joint_patching_search.py \
@@ -176,7 +176,7 @@ python analysis/pattern/joint_patching_search.py \
     --device          cuda:0 \
     --n_pairs         1000 \
     --mode            both \
-    --max_set_size    6 \
+    --max_search_depth 6 \
     --topk            5
 ```
 
