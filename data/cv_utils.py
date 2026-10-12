@@ -1,9 +1,11 @@
 """
 Shared utilities for cross-validation splits.
 """
+import re
+
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
 
 # This value must match across ALL scripts for reproducibility (training, evaluation, ablation)
@@ -54,6 +56,58 @@ def get_cv_splitter(n_folds=5, random_state=DEFAULT_RANDOM_STATE):
         shuffle=True,
         random_state=random_state
     )
+
+def get_gene_ids(sequences):
+    """Versionless ENSG id per record, from the FASTA header
+    (ENST|ENSG|...); raises if a header has none."""
+    out = []
+    for rec in sequences:
+        desc = rec.description or rec.id
+        parts = desc.split("|")
+        gid = parts[1].split(".")[0] if len(parts) > 1 and parts[1].startswith("ENSG") else None
+        if gid is None:
+            m = re.search(r"ENSG\d+", desc)
+            gid = m.group(0) if m else None
+        if gid is None:
+            raise ValueError(f"No ENSG gene id in FASTA header: {desc[:80]!r}")
+        out.append(gid)
+    return out
+
+
+def gene_overlap(gene_ids, train_idx, val_idx):
+    """(n val records whose gene occurs in train, n val records)."""
+    train_genes = {gene_ids[i] for i in train_idx}
+    return sum(gene_ids[i] in train_genes for i in val_idx), len(val_idx)
+
+
+def get_cv_splits(sequences, labels, n_folds=5, random_state=DEFAULT_RANDOM_STATE,
+                  n_bins=DEFAULT_N_BINS, group_by_gene=False):
+    """List of (train_idx, val_idx), stratified by class x length bin.
+    group_by_gene=False reproduces the legacy StratifiedKFold folds exactly;
+    True keeps all isoforms of a gene in one fold (StratifiedGroupKFold)."""
+    strat = create_length_stratified_groups(sequences, labels, n_bins=n_bins)
+    if not group_by_gene:
+        return list(get_cv_splitter(n_folds, random_state).split(sequences, strat))
+    genes = get_gene_ids(sequences)
+    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+    splits = list(sgkf.split(sequences, strat, groups=genes))
+    for tr, va in splits:
+        if gene_overlap(genes, tr, va)[0]:
+            raise RuntimeError("gene-grouped CV produced a train/val gene overlap")
+    return splits
+
+
+def get_cv_splits_from_config(config, sequences, labels):
+    """get_cv_splits with n_folds / random_state / n_bins / group_by_gene
+    read from config["training"] (group_by_gene defaults to False = legacy)."""
+    return get_cv_splits(
+        sequences, labels,
+        n_folds=config.get("training", "n_folds"),
+        random_state=config.get("training", "random_state", default=DEFAULT_RANDOM_STATE),
+        n_bins=config.get("training", "n_bins", default=DEFAULT_N_BINS),
+        group_by_gene=bool(config.get("training", "group_by_gene", default=False)),
+    )
+
 
 def load_biotype_mapping(biotype_csv_path):
     """Load biotype information from CSV"""

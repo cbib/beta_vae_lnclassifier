@@ -11,6 +11,8 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
+from data.cv_utils import get_cv_splits_from_config
+
 
 def extract_embeddings_from_model(model, data_loader, device, use_deterministic=True, biotype_mapping=None):
     """
@@ -156,13 +158,9 @@ def extract_embeddings_all_folds(model_builder, experiment_dir, sequences, label
     }}
     
     # Create CV splits (must match training)
-    strat_groups = create_length_stratified_groups(sequences, labels)
-    skf = get_cv_splitter(
-        n_folds=config.get('training', 'n_folds', default=5),
-        random_state=config.get('training', 'random_state', default=42)
-    )
+    splits = get_cv_splits_from_config(config, sequences, labels)
     
-    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(sequences, strat_groups)):
+    for fold_idx, (train_idx, val_idx) in enumerate(splits):
         print(f"\n{'='*80}")
         print(f"Extracting embeddings from Fold {fold_idx}")
         print(f"{'='*80}")

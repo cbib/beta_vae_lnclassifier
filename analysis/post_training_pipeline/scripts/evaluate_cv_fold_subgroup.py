@@ -34,6 +34,7 @@ python src/evaluate_cv_subgroup.py \\
 """
 
 from __future__ import annotations
+from data.cv_utils import get_cv_splits_from_config
 
 import argparse
 import gc
@@ -89,16 +90,7 @@ def _build_dataset(config, lnc_fasta=None, pc_fasta=None) -> SequenceFeatureData
 
 
 def _get_splits(config, all_sequences, labels):
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels,
-        n_bins=config.get("training", "n_bins", default=5),
-    )
-    skf = StratifiedKFold(
-        n_splits     = config.get("training", "n_folds"),
-        shuffle      = True,
-        random_state = config.get("training", "random_state", default=42),
-    )
-    return list(skf.split(all_sequences, strat_groups))
+    return get_cv_splits_from_config(config, all_sequences, labels)
 
 
 def _forward_batch(model, batch, device):

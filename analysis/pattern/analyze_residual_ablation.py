@@ -51,6 +51,7 @@ python analysis/pattern/analyze_residual_ablation.py \
     --gencode_version v49 \
     --device         cuda:0
 """
+from data.cv_utils import get_cv_splits_from_config
 
 import argparse
 from pathlib import Path
@@ -635,16 +636,7 @@ def main():
     )
     print(f"Dataset: {len(dataset):,} samples")
 
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels,
-        n_bins=config.get("training", "n_bins", default=5)
-    )
-    skf = StratifiedKFold(
-        n_splits     = config.get("training", "n_folds"),
-        shuffle      = True,
-        random_state = config.get("training", "random_state", default=42)
-    )
-    splits = list(skf.split(all_sequences, strat_groups))
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
 
     model_builder = create_model_builder(config)
     token_names   = REGISTRY.all_subgroups

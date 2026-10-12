@@ -101,7 +101,7 @@ from tqdm import tqdm
 
 from configs.load_config import load_config
 from models.model_builder import create_model_builder
-from data.cv_utils import load_sequences_in_order, create_length_stratified_groups
+from data.cv_utils import load_sequences_in_order, get_cv_splits_from_config
 from data.gated_feature_dataset import SequenceFeatureDataset
 from data.feature_registry import REGISTRY
 
@@ -719,9 +719,7 @@ def main():
     )
     print(f"Dataset: {len(dataset):,} samples  NonB2: {has_nonb2}")
 
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels, n_bins=config.get("training", "n_bins", default=5)
-    )
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
 
     all_greedy_dfs, all_topk_dfs = [], []
 
@@ -734,7 +732,7 @@ def main():
 
         greedy_df, topk_df = run_one_fold(
             fold=fold, exp_dir=exp_dir, dataset=dataset,
-            all_sequences=all_sequences, labels=labels, strat_groups=strat_groups,
+            all_sequences=all_sequences, labels=labels, splits=splits,
             n_folds_config=n_folds_config, random_state=random_state,
             has_nonb2=has_nonb2, device=device, args=args,
             all_subgroups=all_subgroups, single_iia=single_iia,

@@ -81,6 +81,7 @@ Notes
 """
 
 from __future__ import annotations
+from data.cv_utils import get_cv_splits_from_config
 
 import argparse
 import warnings
@@ -755,16 +756,7 @@ def main():
     )
     print(f"Dataset: {len(dataset):,} samples  NonB2: {has_nonb2}")
 
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels,
-        n_bins=config.get("training", "n_bins", default=5)
-    )
-    skf = StratifiedKFold(
-        n_splits     = config.get("training", "n_folds"),
-        shuffle      = True,
-        random_state = config.get("training", "random_state", default=42)
-    )
-    splits = list(skf.split(all_sequences, strat_groups))
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
 
     model_builder = create_model_builder(config)
 

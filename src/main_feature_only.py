@@ -35,14 +35,13 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import (accuracy_score, confusion_matrix,
                               precision_recall_fscore_support)
-from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from configs.load_config import load_config
 from models.model_builder import create_model_builder
-from data.cv_utils import load_sequences_in_order, create_length_stratified_groups
+from data.cv_utils import load_sequences_in_order, get_cv_splits_from_config
 from data.gated_feature_dataset import SequenceFeatureDataset
 from data.feature_registry import REGISTRY
 
@@ -347,13 +346,7 @@ def main():
     del _model
 
     n_folds = config.get("training", "n_folds")
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels, n_bins=config.get("training", "n_bins", default=5)
-    )
-    skf = StratifiedKFold(
-        n_splits=n_folds, shuffle=True,
-        random_state=config.get("training", "random_state", default=42)
-    )
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
 
     bs = config.get("training", "batch_size")
     nw = config.get("training", "num_workers", default=1)
@@ -363,7 +356,7 @@ def main():
     save_dir = output_dir / "models"
     save_dir.mkdir(exist_ok=True, parents=True)
 
-    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(all_sequences, strat_groups)):
+    for fold_idx, (train_idx, val_idx) in enumerate(splits):
         print(f"\n{'='*60}\nFold {fold_idx+1}/{n_folds}\n{'='*60}")
 
         train_dataset = Subset(dataset, train_idx)

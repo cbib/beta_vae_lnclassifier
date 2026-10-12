@@ -22,7 +22,8 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from data.cv_utils import create_length_stratified_groups
+from data.cv_utils import get_cv_splits_from_config
+, 
 from data.feature_registry import REGISTRY
 
 
@@ -650,23 +651,23 @@ class BetaVAESubgroupTrainer:
 
     # ── cross-validation ──────────────────────────────────────────────────────
 
-    def cross_validate(self, sequences, labels, stratify_by_length: bool = True):
+    def _cv_splits(self, sequences, labels):
+        """(train_idx, val_idx) per fold; the single source of fold membership
+        (training and attention extraction). training.group_by_gene keeps
+        isoforms of a gene together."""
+        cfg = self.config
+        return get_cv_splits(
+            sequences, labels, n_folds=self.n_folds,
+            random_state=cfg.get("training", "random_state", default=42),
+            n_bins=cfg.get("training", "n_bins", default=5),
+            group_by_gene=bool(cfg.get("training", "group_by_gene", default=False)))
+
+    def cross_validate(self, sequences, labels):
         print(f"\n{'='*80}\n{self.n_folds}-Fold CV | {len(sequences)} samples\n{'='*80}")
 
-        strat_groups = (
-            create_length_stratified_groups(
-                sequences, labels,
-                n_bins=self.config.get("training", "n_bins", default=5)
-            ) if stratify_by_length else labels
-        )
+        splits = self._cv_splits(sequences, labels)
 
-        skf = StratifiedKFold(
-            n_splits=self.n_folds, shuffle=True,
-            random_state=self.config.get("training", "random_state", default=42)
-        )
-
-        for fold_idx, (train_idx, val_idx) in enumerate(
-                skf.split(sequences, strat_groups)):
+        for fold_idx, (train_idx, val_idx) in enumerate(splits):
             train_dataset = Subset(self.dataset, train_idx)
             val_dataset   = Subset(self.dataset, val_idx)
 
@@ -772,15 +773,7 @@ class BetaVAESubgroupTrainer:
         labels_list = (labels_override if labels_override is not None
                        else [s.annotations.get("label") for s in sequences])
 
-        strat_groups = create_length_stratified_groups(
-            sequences, labels_list,
-            n_bins=self.config.get("training", "n_bins", default=5)
-        )
-        skf = StratifiedKFold(
-            n_splits=self.n_folds, shuffle=True,
-            random_state=self.config.get("training", "random_state", default=42)
-        )
-        splits = list(skf.split(sequences, strat_groups))
+        splits = self._cv_splits(sequences, labels_list)
 
         bs = self.config.get("training", "batch_size")
         nw = self.config.get("training", "num_workers", default=1)

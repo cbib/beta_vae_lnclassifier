@@ -23,6 +23,7 @@ python analysis/pattern/analyze_subgroup_ablation.py \
     --model_label    "β-VAE" \
     --gencode_version v49
 """
+from data.cv_utils import get_cv_splits_from_config
 
 import argparse
 import json
@@ -472,16 +473,7 @@ def main():
         pc_fasta= config.get('data', 'pc_fasta'),
     )
 
-    strat_groups = create_length_stratified_groups(
-        all_sequences, labels,
-        n_bins=config.get('training', 'n_bins', default=5)
-    )
-    skf = StratifiedKFold(
-        n_splits   = config.get('training', 'n_folds'),
-        shuffle    = True,
-        random_state=config.get('training', 'random_state', default=42)
-    )
-    splits = list(skf.split(all_sequences, strat_groups))
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
 
     model_builder = create_model_builder(config)
     token_names   = REGISTRY.all_subgroups

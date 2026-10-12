@@ -17,7 +17,7 @@ from Bio import SeqIO
 
 from configs.load_config import load_config
 from models.model_builder import create_model_builder
-from data.cv_utils import create_length_stratified_groups, load_sequences_in_order, verify_sequence_order
+from data.cv_utils import get_cv_splits_from_config, load_sequences_in_order, verify_sequence_order
 from data.feature_dataset import SequenceFeatureDataset
 from trainers.beta_vae_features_trainer import BetaVAEFeaturesTrainer
 from torch.utils.data import DataLoader

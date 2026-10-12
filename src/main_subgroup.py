@@ -134,8 +134,7 @@ def main():
 
     cv_results = trainer.cross_validate(
         sequences          = all_sequences,
-        labels             = labels,
-        stratify_by_length = True,
+        labels             = labels
     )
 
     # ── Save CV results ───────────────────────────────────────────────────────

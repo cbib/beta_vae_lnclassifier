@@ -9,12 +9,11 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-from sklearn.model_selection import StratifiedKFold
 import json
 from pathlib import Path
 from tqdm import tqdm
 
-from data.cv_utils import create_length_stratified_groups
+from data.cv_utils import get_cv_splits_from_config
 
 # trainers/beta_vae_features_single_fold.py
 """
@@ -673,22 +672,10 @@ class BetaVAEFeaturesTrainer:
         print(f" pc:  {label_counts.get('pc', 0)} ({label_counts.get('pc', 0)/len(labels)*100:.1f}%)")
         
         # Create stratification groups
-        if stratify_by_length:
-            n_bins = self.config.get('training', 'n_bins', default=5)
-            strat_groups = create_length_stratified_groups(sequences, labels, n_bins=n_bins)
-            print(f"Created {len(set(strat_groups))} stratification groups ({n_bins} length bins)")
-        else:
-            strat_groups = labels
-        
-        # Initialize k-fold splitter
-        skf = StratifiedKFold(
-            n_splits=self.n_folds,
-            shuffle=True,
-            random_state=self.config.get('training', 'random_state', default=42)
-        )
+        splits = get_cv_splits_from_config(self.config, sequences, labels)
         
         # Perform cross-validation
-        for fold_idx, (train_idx, val_idx) in enumerate(skf.split(sequences, strat_groups)):
+        for fold_idx, (train_idx, val_idx) in enumerate(splits):
             print(f"\nFold {fold_idx + 1} split:")
             print(f"  Train: {len(train_idx)} samples")
             print(f"  Val:   {len(val_idx)} samples")

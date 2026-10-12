@@ -49,7 +49,7 @@ from sklearn.metrics import (
 import matplotlib.pyplot as plt
 
 from data.feature_dataset import SequenceFeatureDataset
-from data.cv_utils import create_length_stratified_groups, get_cv_splitter, load_sequences_in_order, verify_sequence_order
+from data.cv_utils import get_cv_splits_from_config, load_sequences_in_order, verify_sequence_order
 from models.beta_vae_features import BetaVAEWithFeatures
 from models.beta_vae_features_attn import BetaVAEWithFeaturesAttention
 from configs.load_config import load_config
@@ -714,11 +714,7 @@ def main():
     n_bins = config.get('training', 'n_bins', default=5)
     random_state = config.get('training', 'random_state', default=42)
     
-    print(f"\nCreating CV splits (n_bins={n_bins}, random_state={random_state})...")
-    strat_groups = create_length_stratified_groups(all_sequences, labels, n_bins=n_bins)
-    print(f"  Created {len(set(strat_groups))} stratification groups")
-    
-    skf = get_cv_splitter(n_folds=args.n_folds, random_state=random_state)
+    splits = get_cv_splits_from_config(config, all_sequences, labels)
     
     # Create the dataset (after we've established the sequence order)
     print("\nLoading full dataset...")
@@ -747,7 +743,7 @@ def main():
     
     fold_results = []
     
-    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(all_sequences, strat_groups)):
+    for fold_idx, (train_idx, val_idx) in enumerate(splits):
         print(f"\n{'='*80}")
         print(f"Fold {fold_idx}")
         print(f"{'='*80}")
@@ -938,7 +934,7 @@ def main():
         
         all_fold_data = {}
         
-        for fold_idx, (train_idx, val_idx) in enumerate(skf.split(all_sequences, strat_groups)):
+        for fold_idx, (train_idx, val_idx) in enumerate(splits):
             print(f"\nExtracting embeddings from fold {fold_idx}...")
             
             val_dataset = Subset(full_dataset, val_idx)
@@ -992,7 +988,7 @@ def main():
         print(f"\nBest fold: {best_fold_idx} (accuracy: {best_fold['deterministic']['accuracy']:.4f})")
         
         # Extract embeddings
-        for fold_idx, (train_idx, val_idx) in enumerate(skf.split(all_sequences, strat_groups)):
+        for fold_idx, (train_idx, val_idx) in enumerate(splits):
             if fold_idx != best_fold_idx:
                 continue
             
