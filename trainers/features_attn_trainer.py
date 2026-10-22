@@ -2,6 +2,7 @@
 """
 Cross-validation trainer for β-VAE with cross-attention genomic features.
 """
+from data.cv_utils import get_cv_splits_from_config
 
 import numpy as np
 import pandas as pd
@@ -516,201 +517,7 @@ class BetaVAEFeaturesAttentionTrainer:
     def cross_validate(self, sequences, labels, stratify_by_length=True):
         print(f"\n{'='*80}\n{self.n_folds}-Fold CV | {len(sequences)} samples\n{'='*80}")
 
-        strat_groups = create_length_stratified_groups(
-            sequences, labels,
-            n_bins=self.config.get('training', 'n_bins', default=5)
-        ) if stratify_by_length else labels
-
-        skf = StratifiedKFold(
-            n_splits=self.n_folds, shuffle=True,
-            random_state=self.config.get('training', 'random_state', default=42)
-        )
-
-        for fold_idx, (train_idx, val_idx) in enumerate(skf.split(sequences, strat_groups)):
-            train_dataset = Subset(self.dataset, train_idx)
-            val_dataset   = Subset(self.dataset, val_idx)
-
-            label_to_idx   = {'lnc': 0, 'pc': 1}
-            train_labels_n = [label_to_idx[labels[i]] for i in train_idx]
-            class_weights  = compute_class_weight(
-                'balanced', classes=np.array([0, 1]), y=train_labels_n)
-
-            model, fold_metrics, model_path = self.train_fold(
-                fold_idx, train_dataset, val_dataset, class_weights)
-
-            self.model_paths.append({
-                'fold': fold_idx, 'path': model_path,
-                'val_acc': fold_metrics['val_acc'],
-                'val_loss': fold_metrics['val_loss']
-            })
-            self.fold_results.append(fold_metrics)
-
-        cv_results = self._aggregate_results()
-
-        output_dir      = Path(self.config.get('output', 'experiment_name'))
-        model_paths_df  = pd.DataFrame(self.model_paths)
-        model_paths_df.to_csv(output_dir / 'model_paths.csv', index=False)
-
-        best_fold_idx       = model_paths_df['val_loss'].idxmin()
-        self.best_model_path = model_paths_df.iloc[best_fold_idx]['path']
-        self.best_fold_idx   = best_fold_idx
-
-        print(f"\nBest fold: {best_fold_idx+1} | "
-              f"val_loss={model_paths_df.iloc[best_fold_idx]['val_loss']:.4f} | "
-              f"val_acc={model_paths_df.iloc[best_fold_idx]['val_acc']:.4f}")
-        return cv_results
-    
-    def _aggregate_results(self):
-        metrics = ['val_acc', 'precision', 'recall', 'f1']
-        aggregated = {}
-        print(f"\n{'='*80}\nCV Results\n{'='*80}")
-        for m in metrics:
-            vals = [f[m] for f in self.fold_results]
-            aggregated[m] = {'mean': np.mean(vals), 'std': np.std(vals), 'values': vals}
-            print(f"  {m:12s}: {np.mean(vals):.4f} ± {np.std(vals):.4f}")
-        return aggregated
-    
-    def save_results(self, output_dir):
-        """Save all CV results"""
-        output_dir = Path(output_dir)
-        output_dir.mkdir(exist_ok=True, parents=True)
-        
-        # Save fold results
-        fold_results_serializable = []
-        for fold in self.fold_results:
-            f = fold.copy()
-            f['confusion_matrix'] = f['confusion_matrix'].tolist()
-            fold_results_serializable.append(f)
-        with open(output_dir / 'fold_results.json', 'w') as fh:
-            json.dump(fold_results_serializable, fh, indent=2)
-        print(f"Saved fold results → {output_dir / 'fold_results.json'}")
-
-    # =========================================================================
-    # extract_embeddings_from_best_fold — now also saves attn_weights
-    # =========================================================================
-
-    def extract_embeddings_from_best_fold(self, output_path):
-        """
-        Extract embeddings AND attention weights from best fold model.
-
-        Saves .npz with:
-            embeddings:     (N, latent_dim)    — latent mean z
-            logits:         (N, num_classes)
-            probs:          (N, num_classes)
-            predictions:    (N,)
-            confidences:    (N,)               — max class probability
-            labels:         (N,)
-            transcript_ids: (N,)
-            attn_weights:   (N, L_encoded, 2)  — col0=TE, col1=NonB  ← NEW
-        """
-        if not hasattr(self, 'best_model_path'):
-            raise ValueError("Run cross_validate() first.")
-
-        print(f"\nLoading best model: {self.best_model_path}")
-        checkpoint = torch.load(self.best_model_path, map_location=self.device)
-        
-        # Rebuild model
-        model = self.model_builder()
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(self.device)
-        model.eval()
-        print(f"  epoch={checkpoint['epoch']} val_acc={checkpoint['val_acc']:.4f}")
-
-        loader = DataLoader(self.dataset, batch_size=256, shuffle=False, num_workers=1)
-
-        all_embeddings, all_logits, all_labels   = [], [], []
-        all_transcript_ids, all_attn_weights      = [], []
-
-        with torch.no_grad():
-            for batch in tqdm(loader, desc="Extracting"):
-                seq  = batch['sequence'].to(self.device)
-                te   = batch['te_features'].to(self.device)
-                nonb = batch['nonb_features'].to(self.device)
-
-                outputs = model(seq, te_features=te, nonb_features=nonb, deterministic=True)
-
-                all_embeddings.append(outputs['mu'].cpu().numpy())
-                all_logits.append(outputs['logits'].cpu().numpy())
-                all_labels.append(batch['label'].numpy())
-                all_transcript_ids.extend(batch['transcript_id'])
-                all_attn_weights.append(outputs['attn_weights'].cpu().numpy())
-
-        embeddings   = np.vstack(all_embeddings)
-        logits       = np.vstack(all_logits)
-        labels       = np.concatenate(all_labels)
-        attn_weights = np.vstack(all_attn_weights)
-
-        probs       = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
-        predictions = logits.argmax(axis=1)
-        confidences = probs.max(axis=1)
-
-        print(f"\nExtracted:")
-        print(f"  embeddings:   {embeddings.shape}")
-        print(f"  attn_weights: {attn_weights.shape}  (L_encoded={attn_weights.shape[1]})")
-
-        output_path = Path(output_path)
-        np.savez(
-            output_path,
-            embeddings=embeddings,
-            logits=logits,
-            probs=probs,
-            predictions=predictions,
-            confidences=confidences,
-            labels=labels,
-            transcript_ids=np.array(all_transcript_ids, dtype=object),
-            attn_weights=attn_weights
-        )
-        print(f"  Saved -> {output_path}")
-        return str(output_path)
-
-    def extract_attention_all_folds(self, output_dir, labels_override=None):
-        """
-        Extract attention weights from every fold model on its validation set.
-
-        Args:
-            output_dir: Directory to save per-fold .npz files
-            labels_override: Optional list of labels ['lncRNA'/'protein_coding'] in
-                             dataset order. If provided, used instead of reading from
-                             sequence annotations (which can fail with KeyError: 'unknown').
-
-        Creates one .npz per fold: output_dir/fold_N_attn.npz
-
-        Each .npz contains:
-            attn_weights:   (N_val, L_encoded, 2)
-            predictions:    (N_val,)
-            confidences:    (N_val,)
-            labels:         (N_val,)
-            transcript_ids: (N_val,)
-            is_hard_case:   (N_val,)  — misclassified OR confidence < 0.6
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(exist_ok=True, parents=True)
-
-        if not self.model_paths:
-            raise ValueError("No model paths found. Run cross_validate() first.")
-
-        sequences = self.dataset.sequences
-
-        # Use override if provided, else try annotations (original behaviour)
-        if labels_override is not None:
-            labels_list = labels_override
-        else:
-            labels_list = [s.annotations.get('label', None) for s in sequences]
-            if any(l is None for l in labels_list):
-                raise ValueError(
-                    "Some sequences have no 'label' annotation. "
-                    "Pass labels_override= to extract_attention_all_folds()."
-                )
-
-        strat_groups = create_length_stratified_groups(
-            sequences, labels_list,
-            n_bins=self.config.get('training', 'n_bins', default=5)
-        )
-        skf = StratifiedKFold(
-            n_splits=self.n_folds, shuffle=True,
-            random_state=self.config.get('training', 'random_state', default=42)
-        )
-        splits = list(skf.split(sequences, strat_groups))
+        splits = get_cv_splits_from_config(self.config, sequences, labels)
 
         batch_size  = self.config.get('training', 'batch_size')
         num_workers = self.config.get('training', 'num_workers', default=1)
@@ -760,6 +567,7 @@ class BetaVAEFeaturesAttentionTrainer:
 
             is_hard = (predictions != labels_arr) | (confidences < 0.6)
 
+            output_dir = Path(self.config.get("output", "experiment_name"))
             save_path = output_dir / f'fold_{fold_idx}_attn.npz'
             np.savez(
                 save_path,

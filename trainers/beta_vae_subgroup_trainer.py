@@ -22,8 +22,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from data.cv_utils import get_cv_splits_from_config
-, 
+from data.cv_utils import get_cv_splits_from_config, get_cv_splits, gene_overlap, get_gene_ids
 from data.feature_registry import REGISTRY
 
 
@@ -561,6 +560,13 @@ class BetaVAESubgroupTrainer:
         print(f"Train={len(train_ids)} Val={len(val_ids)} Overlap={len(overlap)}")
         if overlap:
             print(f"  WARNING: {len(overlap)} overlapping transcripts!")
+        if not hasattr(self, "_gene_ids"):
+            self._gene_ids = get_gene_ids(self.dataset.sequences)
+        n_shared, n_val = gene_overlap(
+            self._gene_ids, train_dataset.indices, val_dataset.indices)
+        print(f"  Val transcripts sharing a gene with train: {n_shared}/{n_val}")
+        if self.config.get("training", "group_by_gene", default=False) and n_shared:
+            raise RuntimeError("group_by_gene is set but train/val share genes")
 
         bs  = self.config.get("training", "batch_size")
         nw  = self.config.get("training", "num_workers", default=1)

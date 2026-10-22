@@ -5,7 +5,10 @@ Split CD-HIT filtered lncRNA and mRNA FASTA files into:
   - 95% train/val  → used as input to existing CV training scripts
   -  5% test       → held-out independent test set
 
-Stratified by class (lnc / pc) to preserve class ratio.
+--split_by gene (default): all isoforms of a gene go to the same side;
+stratified by class x length bin (data.cv_utils bins), so test genes share
+no isoform with train/val. --split_by transcript: legacy per-class random
+shuffle (no length, no gene grouping), kept to reproduce older splits.
 Outputs four FASTA files and a JSON manifest with split statistics.
 
 Usage:
@@ -20,10 +23,16 @@ Usage:
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 from collections import defaultdict
 
 from Bio import SeqIO
+from sklearn.model_selection import StratifiedGroupKFold
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root
+from data.cv_utils import (create_length_stratified_groups, gene_overlap,
+                           get_gene_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +62,31 @@ def stratified_split(records: list, test_size: float, seed: int):
     return train_val, test
 
 
+def gene_grouped_split(lnc_records: list, pc_records: list, test_size: float,
+                       seed: int, n_bins: int = 5):
+    """(lnc_trainval, lnc_test, pc_trainval, pc_test, stats). Whole genes go
+    to one side; strata are class x length bin; test share ~= test_size."""
+    records = lnc_records + pc_records
+    labels = ["lnc"] * len(lnc_records) + ["pc"] * len(pc_records)
+    strat = create_length_stratified_groups(records, labels, n_bins=n_bins)
+    genes = get_gene_ids(records)
+    n_splits = max(2, round(1 / test_size))
+    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    tv_idx, te_idx = next(iter(sgkf.split(records, strat, groups=genes)))
+    shared, _ = gene_overlap(genes, tv_idx, te_idx)
+    if shared:
+        raise RuntimeError(f"{shared} test records share a gene with train/val")
+    n_lnc = len(lnc_records)
+    pick = lambda idx, lo, hi: [records[i] for i in idx if lo <= i < hi]
+    stats = {"n_test_genes": len({genes[i] for i in te_idx}),
+             "n_trainval_genes": len({genes[i] for i in tv_idx}),
+             "test_records_sharing_gene_with_trainval": int(shared),
+             "n_bins": n_bins}
+    return (pick(tv_idx, 0, n_lnc), pick(te_idx, 0, n_lnc),
+            pick(tv_idx, n_lnc, len(records)), pick(te_idx, n_lnc, len(records)),
+            stats)
+
+
 def write_fasta(records: list, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -75,6 +109,11 @@ def main():
                         help="Fraction of each class to hold out as test (default: 0.05)")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed for reproducibility (default: 42)")
+    parser.add_argument("--split_by",    choices=["gene", "transcript"], default="gene",
+                        help="gene: isoforms of a gene stay together (default); "
+                             "transcript: legacy random per-class split")
+    parser.add_argument("--n_bins",      type=int,   default=5,
+                        help="Length bins for stratification (gene mode)")
     args = parser.parse_args()
 
     assert 0 < args.test_size < 1, "--test_size must be between 0 and 1"
@@ -96,10 +135,16 @@ def main():
     # ------------------------------------------------------------------
     # Split each class independently (stratified by class)
     # ------------------------------------------------------------------
-    print(f"\nSplitting with test_size={args.test_size:.0%}, seed={args.seed}...")
+    print(f"\nSplitting by {args.split_by} with test_size={args.test_size:.0%}, "
+          f"seed={args.seed}...")
 
-    lnc_trainval, lnc_test = stratified_split(lnc_records, args.test_size, seed=args.seed)
-    pc_trainval,  pc_test  = stratified_split(pc_records,  args.test_size, seed=args.seed)
+    extra = {}
+    if args.split_by == "gene":
+        lnc_trainval, lnc_test, pc_trainval, pc_test, extra = gene_grouped_split(
+            lnc_records, pc_records, args.test_size, args.seed, args.n_bins)
+    else:
+        lnc_trainval, lnc_test = stratified_split(lnc_records, args.test_size, seed=args.seed)
+        pc_trainval,  pc_test  = stratified_split(pc_records,  args.test_size, seed=args.seed)
 
     # ------------------------------------------------------------------
     # Write outputs
@@ -118,6 +163,8 @@ def main():
     manifest = {
         "seed": args.seed,
         "test_size": args.test_size,
+        "split_by": args.split_by,
+        **extra,
         "input": {
             "lnc_fasta": str(args.lnc_fasta),
             "pc_fasta":  str(args.pc_fasta),
