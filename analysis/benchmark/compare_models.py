@@ -49,7 +49,7 @@ python analysis/compare_models.py \\
     --cpat_csv      .../cpat/predictions_with_cpat.csv \\
     --cpc2_tsv      .../cpc2_results.tsv \\
     --lncdc_tsv     .../lncdc_results.csv \\
-    --orthrus_csv   .../orthrus/orthrus_test_predictions.csv \
+    --orthrus_csv   .../orthrus_test_predictions.csv \
     --lncrnabert_csv .../lncrnabert_test_predictions.csv \\
     --output_dir    gencode_v49_experiments/benchmark_comparison
 
@@ -331,6 +331,13 @@ def main():
     parser.add_argument("--output_dir",       required=True)
     parser.add_argument("--cpat_threshold",   type=float, default=CPAT_THRESHOLD)
     parser.add_argument("--cpc2_threshold",   type=float, default=CPC2_THRESHOLD)
+    parser.add_argument("--common_subset",    action="store_true",
+                        help="score all methods (table, hard-case flags, merged "
+                             "predictions) only on transcripts every method returned")
+    parser.add_argument("--hard_def", choices=["file", "error"], default="file",
+                        help="hard case = flag from each method's file (default, "
+                             "definitions differ per method) or = misclassified "
+                             "(same definition for all methods)")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -363,6 +370,8 @@ def main():
         flag_col: column name to use in merged_df for is_hard (default: name)
         """
         nonlocal merged_df
+        if args.hard_def == "error":
+            hard_col = None
 
         m = ref.merge(df[["transcript_id", pred_col]
                           + ([hard_col] if hard_col and hard_col in df.columns
@@ -406,6 +415,12 @@ def main():
             hard_series.rename(col_name).reset_index(),
             on="transcript_id", how="left",
         )
+
+    queue = []
+    _run = add_method
+
+    def add_method(name, df, pred_col="pred_int", hard_col=None, flag_col=None):  # noqa: F811
+        queue.append((name, df, pred_col, hard_col, flag_col))
 
     # β-LNC full model
     add_method("β-LNC (full)", blnc_df,
@@ -464,6 +479,25 @@ def main():
         add_method("lncRNA-BERT (3-mer)", bert_df,
                    hard_col="is_hard", flag_col="lncrnabert")
 
+    # ── Optional common subset: transcripts every method returned ─────────────
+    if args.common_subset:
+        common = set(ref["transcript_id"])
+        have = {}
+        for name, df, pred_col, _, _ in queue:
+            have[name] = set(df.loc[df[pred_col].notna(), "transcript_id"])
+            common &= have[name]
+        dropped = ref[~ref["transcript_id"].isin(common)].copy()
+        dropped["missing_from"] = [",".join(n for n in have if t not in have[n])
+                                   for t in dropped["transcript_id"]]
+        dropped.to_csv(output_dir / "excluded_ids_common_subset.csv", index=False)
+        print(f"\nCommon subset: {len(common):,} of {len(ref):,} transcripts "
+              f"({len(dropped):,} excluded; lnc={(dropped.true_int == 0).sum():,}, "
+              f"pc={(dropped.true_int == 1).sum():,})")
+        ref = ref[ref["transcript_id"].isin(common)].reset_index(drop=True)
+        merged_df = ref.copy()
+    for name, df, pred_col, hard_col, flag_col in queue:
+        _run(name, df, pred_col=pred_col, hard_col=hard_col, flag_col=flag_col)
+
     # ── Print and save benchmark table ────────────────────────────────────────
     print_metrics_table(metrics_rows)
     metrics_df = pd.DataFrame(metrics_rows)
@@ -494,9 +528,14 @@ def main():
     )
 
     # ── Save merged predictions (input for upset plot) ────────────────────────
-    # Fill NaN hard flags with False — NaN means the method had no prediction
-    # for that transcript (ID mismatch), not that it was hard
+    # NaN hard flag = method had no prediction for that transcript. Without
+    # --common_subset these are filled with False (counted as "easy"), which
+    # biases the hard-for-all / easy-for-all counts; use --common_subset.
     hard_cols = [c for c in merged_df.columns if c.endswith("_hard")]
+    n_nan = int(merged_df[hard_cols].isna().sum().sum()) if hard_cols else 0
+    if n_nan:
+        print(f"  WARNING: {n_nan:,} missing hard flags filled with False "
+              f"(rerun with --common_subset)")
     merged_df[hard_cols] = merged_df[hard_cols].fillna(False)
 
     merged_df.to_csv(output_dir / "predictions_merged.csv", index=False)

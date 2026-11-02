@@ -1,4 +1,3 @@
-
 #!/bin/bash
 # =============================================================================
 # run_benchmark_tools.sh
@@ -11,6 +10,7 @@
 #   CPC2              — beta_lncrna conda env
 #   LncDC             — lncdc conda env
 #   Orthrus 4-track   — orthrus conda env
+#   lncRNA-BERT       — lncrnabert conda env, GPU (run_lncrnabert.sh)
 #
 # Usage
 # -----
@@ -56,6 +56,10 @@ SKIP_CPC2=false
 SKIP_LNCDC=false
 SKIP_ORTHRUS=false
 SKIP_RNASAMBA=false
+SKIP_LNCRNABERT=false
+LNCRNABERT_ENV="lncrnabert"
+LNCRNABERT_BATCH=8
+LNCRNABERT_WORKDIR="."
 RNASAMBA_WEIGHTS="rnasamba/full_length_weights.hdf5"
 TRAIN_LNC_FASTA=""
 TRAIN_PC_FASTA=""
@@ -87,6 +91,10 @@ while [[ $# -gt 0 ]]; do
         --skip_lncdc)         SKIP_LNCDC=true;         shift 1 ;;
         --skip_orthrus)       SKIP_ORTHRUS=true;       shift 1 ;;
         --skip_rnasamba)      SKIP_RNASAMBA=true;      shift 1 ;;
+        --skip_lncrnabert)    SKIP_LNCRNABERT=true;    shift 1 ;;
+        --lncrnabert_env)     LNCRNABERT_ENV="$2";     shift 2 ;;
+        --lncrnabert_batch)   LNCRNABERT_BATCH="$2";   shift 2 ;;
+        --lncrnabert_workdir) LNCRNABERT_WORKDIR="$2"; shift 2 ;;
         --rnasamba_weights)   RNASAMBA_WEIGHTS="$2";   shift 2 ;;
         --rnasamba_sif)       RNASAMBA_SIF="$2";       shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
@@ -168,13 +176,13 @@ for path in ['${LNC_FASTA}', '${PC_FASTA}']:
         out.append(SeqRecord(Seq(dna), id=rec.id.split('|')[0], name='', description=''))
 SeqIO.write(out, '${MERGED_FASTA}', 'fasta')
 print(f'Written {len(out):,} sequences')
-" >> "\$LOG_FILE" 2>&1
+" >> "$LOG_FILE" 2>&1
 
-if [[ ! -f "\$MERGED_FASTA" ]]; then
-    log "   FASTA merge failed — \${MERGED_FASTA} not created"
+if [[ ! -s "$MERGED_FASTA" ]]; then
+    log "   FASTA merge failed — ${MERGED_FASTA} not created (see ${LOG_FILE})"
     exit 1
 fi
-log "Merged FASTA written: \${MERGED_FASTA}"
+log "Merged FASTA written: ${MERGED_FASTA}"
 fi
 
 # ── Step 1: CPAT ──────────────────────────────────────────────────────────────
@@ -326,7 +334,8 @@ fi
 
 # ── Step 4: Orthrus ───────────────────────────────────────────────────────────
 ORTHRUS_DIR="${OUTPUT_DIR}"
-ORTHRUS_RESULT="${ORTHRUS_DIR}/orthrus/orthrus_test_predictions.csv"
+ORTHRUS_RESULT="${ORTHRUS_DIR}/orthrus_test_predictions.csv"
+ORTHRUS_BATCH_SIZE=16
 
 if $SKIP_ORTHRUS; then
     log_section "Orthrus: skipped"
@@ -360,6 +369,7 @@ conda run ${ORTHRUS_ENV_FLAG} python analysis/benchmark/evaluate_orthrus.py \
     --test_pc_fasta     ${PC_FASTA} \
     --output_dir        ${ORTHRUS_DIR} \
     --max_length        ${MAX_LENGTH} \
+    --batch_size        ${ORTHRUS_BATCH_SIZE} \
     --num_workers       0"
 
     log "  Running evaluate_orthrus.py..."
@@ -473,6 +483,23 @@ else
     fi
 fi
 
+# ── Step 6: lncRNA-BERT (3-mer, zero-shot) ──────────────────────────────────
+LNCRNABERT_RESULT="${OUTPUT_DIR}/lncrnabert_test_predictions.csv"
+if $SKIP_LNCRNABERT; then
+    log_section "lncRNA-BERT: skipped"
+else
+    log_section "Step 6: lncRNA-BERT (zero-shot)"
+    if bash scripts/run_lncrnabert.sh \
+            --lnc_fasta "$LNC_FASTA" --pc_fasta "$PC_FASTA" \
+            --output_dir "$OUTPUT_DIR" --release "$RELEASE" \
+            --env "$LNCRNABERT_ENV" --batch_size "$LNCRNABERT_BATCH" \
+            --workdir "$LNCRNABERT_WORKDIR" 2>&1 | tee -a "$LOG_FILE"; then
+        log "   lncRNA-BERT done: ${LNCRNABERT_RESULT}"
+    else
+        log "   lncRNA-BERT failed — see ${OUTPUT_DIR}/lncrnabert/*.log"
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 log_section "Summary — GENCODE ${RELEASE}"
 
@@ -482,7 +509,8 @@ for label in \
              "CPC2:${CPC2_RESULT}" \
     "LncDC:${LNCDC_RESULT}" \
     "Orthrus:${ORTHRUS_RESULT}" \
-    "RNAsamba:${RNASAMBA_RESULT}"; do
+    "RNAsamba:${RNASAMBA_RESULT}" \
+    "lncRNA-BERT:${LNCRNABERT_RESULT}"; do
     name="${label%%:*}"
     path="${label##*:}"
     if [[ -f "$path" ]]; then

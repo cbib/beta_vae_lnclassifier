@@ -67,7 +67,11 @@ python analysis/benchmark/compute_benchmark_ci.py \\
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import re
 import sys
+import datetime
 from pathlib import Path
 
 import numpy as np
@@ -128,6 +132,33 @@ def load_canonical_labels(path: str) -> pd.DataFrame:
         print(f"  WARNING: {missing} rows in --blnc_csv had unrecognized "
               f"true_label values and will be dropped from labels")
     return df.dropna(subset=["y_true"])[["id", "y_true"]].drop_duplicates(subset="id")
+
+
+# ---------------------------------------------------------------------------
+# Gene ids from the test FASTA headers (for gene-clustered resampling)
+# ---------------------------------------------------------------------------
+
+_ENSG = re.compile(r"ENSG\d+")
+
+
+def load_gene_map(fastas: list[str]) -> pd.DataFrame:
+    rows = []
+    for f in fastas:
+        with open(f) as fh:
+            for line in fh:
+                if line.startswith(">"):
+                    m = _ENSG.search(line)
+                    tid = line[1:].split()[0].split("|")[0].split(".")[0]
+                    rows.append((tid, m.group(0) if m else ""))
+    return pd.DataFrame(rows, columns=["id", "gene"]).drop_duplicates("id")
+
+
+def sha256_short(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +254,28 @@ def bootstrap_f1_ci(y_true: np.ndarray, y_pred: np.ndarray,
     return point, float(lo), float(hi)
 
 
+def cluster_bootstrap(y_true, y_pred, y_score, genes, n_bootstrap, rng, ci=0.95):
+    """Resample GENES with replacement (all isoforms of a drawn gene come
+    along), so isoform correlation within a gene is respected. Returns
+    percentile CIs for macro-F1, accuracy and AUC."""
+    from sklearn.metrics import roc_auc_score
+    codes, uniq = pd.factorize(genes)
+    order = np.argsort(codes, kind="stable")
+    bounds = np.searchsorted(codes[order], np.arange(len(uniq) + 1))
+    G = len(uniq)
+    f1s, accs, aucs = np.empty(n_bootstrap), np.empty(n_bootstrap), np.empty(n_bootstrap)
+    for b in range(n_bootstrap):
+        draw = rng.integers(0, G, size=G)
+        idx = np.concatenate([order[bounds[g]:bounds[g + 1]] for g in draw])
+        yt, yp = y_true[idx], y_pred[idx]
+        f1s[b] = f1_score(yt, yp, average="macro", zero_division=0)
+        accs[b] = (yt == yp).mean()
+        aucs[b] = roc_auc_score(yt, y_score[idx]) if 0 < yt.sum() < len(yt) else np.nan
+    a = (1 - ci) / 2
+    q = lambda v: tuple(float(x) for x in np.nanquantile(v, [a, 1 - a]))
+    return q(f1s), q(accs), q(aucs), G
+
+
 # ---------------------------------------------------------------------------
 # DeLong CI (AUC) — analytic, matches submitted paper's "95% DeLong CI"
 # ---------------------------------------------------------------------------
@@ -290,8 +343,15 @@ def delong_auc_ci(y_true: np.ndarray, y_score: np.ndarray,
 
 def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
                     threshold: float, n_bootstrap: int,
-                    rng: np.random.Generator) -> dict | None:
+                    rng: np.random.Generator,
+                    gene_df: pd.DataFrame | None = None) -> dict | None:
     merged = scores_df.merge(labels_df, on="id", how="inner")
+    if gene_df is not None:
+        merged = merged.merge(gene_df, on="id", how="left")
+        miss = merged["gene"].isna() | (merged["gene"] == "")
+        if miss.any():
+            # unknown gene -> its own cluster (conservative: no pooling)
+            merged.loc[miss, "gene"] = "NOGENE_" + merged.loc[miss, "id"]
     n_before, n_after = len(scores_df), len(merged)
     if n_after == 0:
         print(f"  ERROR: [{name}] zero overlap with canonical labels "
@@ -308,8 +368,22 @@ def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
     f1, f1_lo, f1_hi = bootstrap_f1_ci(y_true, y_pred, n_bootstrap, rng)
     auc, auc_lo, auc_hi = delong_auc_ci(y_true, y_score)
 
+    extra = {}
+    if gene_df is not None:
+        (fl, fh), (al, ah), (ul, uh), G = cluster_bootstrap(
+            y_true, y_pred, y_score, merged["gene"].values, n_bootstrap, rng)
+        extra = dict(n_genes=G, f1_gene_ci_low=fl, f1_gene_ci_high=fh,
+                     acc_gene_ci_low=al, acc_gene_ci_high=ah,
+                     auc_gene_ci_low=ul, auc_gene_ci_high=uh)
+    per_class = {}
+    for cname, cval in (("lnc", 0), ("pc", 1)):
+        m = y_true == cval
+        per_class[f"n_{cname}"] = int(m.sum())
+        per_class[f"recall_{cname}"] = float((y_pred[m] == cval).mean()) if m.any() else float("nan")
+        per_class[f"precision_{cname}"] = (float((y_true[y_pred == cval] == cval).mean())
+                                           if (y_pred == cval).any() else float("nan"))
     return dict(
-        method=name, n_samples=n_after,
+        method=name, n_samples=n_after, **per_class, **extra,
         accuracy=accuracy_score(y_true, y_pred),
         precision=precision_score(y_true, y_pred, average="macro", zero_division=0),
         recall=recall_score(y_true, y_pred, average="macro", zero_division=0),
@@ -332,6 +406,13 @@ def main():
     p.add_argument("--cpat_csv",         default=None)
     p.add_argument("--cpc2_tsv",         default=None)
     p.add_argument("--lncdc_csv",        default=None)
+    p.add_argument("--lncdc_tsv",        default=None,
+                   help="alias of --lncdc_csv (compare_models.py name)")
+    p.add_argument("--test_lnc_fasta",   default=None,
+                   help="test lncRNA FASTA; with --test_pc_fasta enables "
+                        "gene-clustered CIs (ENSG from headers)")
+    p.add_argument("--test_pc_fasta",    default=None)
+    p.add_argument("--feelNc_tsv",       default=None, help="accepted and ignored")
     p.add_argument("--rnasamba_tsv",     default=None)
     p.add_argument("--orthrus_csv",      default=None)
     p.add_argument("--lncrnabert_csv",   default=None)
@@ -339,6 +420,9 @@ def main():
     p.add_argument("--cpat_threshold",   type=float, default=None)
     p.add_argument("--cpc2_threshold",   type=float, default=None)
 
+    p.add_argument("--common_subset",    action="store_true",
+                   help="score every method on the transcripts ALL methods returned; "
+                        "the all-available table is also written (..._allavailable.csv)")
     p.add_argument("--n_bootstrap",      type=int, default=10000)
     p.add_argument("--seed",             type=int, default=42)
     p.add_argument("--output_dir",       required=True)
@@ -352,6 +436,21 @@ def main():
     labels_df = load_canonical_labels(args.blnc_csv)
     print(f"  {len(labels_df)} transcripts with valid labels")
 
+    gene_df = None
+    fastas = [f for f in (args.test_lnc_fasta, args.test_pc_fasta) if f]
+    if len(fastas) == 2:
+        gene_df = load_gene_map(fastas)
+        ng = gene_df.loc[gene_df.gene != "", "gene"].nunique()
+        print(f"  gene map: {len(gene_df)} test transcripts, {ng} genes")
+        ids = set(labels_df["id"])
+        miss = len(ids - set(gene_df["id"]))
+        if miss:
+            sys.exit(f"ERROR: {miss} labelled transcripts are not in the test "
+                     f"FASTAs -- predictions and FASTAs are from different splits")
+    else:
+        print("  WARNING: no test FASTAs given -> isoform-naive CIs only "
+              "(treats isoforms of one gene as independent)")
+
     thresholds = dict(DEFAULT_THRESHOLDS)
     if args.cpat_threshold is not None:
         thresholds["cpat"] = args.cpat_threshold
@@ -363,40 +462,82 @@ def main():
         "feature_only": args.feature_only_csv,
         "cpat":         args.cpat_csv,
         "cpc2":         args.cpc2_tsv,
-        "lncdc":        args.lncdc_csv,
+        "lncdc":        args.lncdc_csv or args.lncdc_tsv,
         "rnasamba":     args.rnasamba_tsv,
         "orthrus":      args.orthrus_csv,
         "lncrnabert":   args.lncrnabert_csv,
     }
 
-    rows = []
+    # load every method's scores once
+    scores = {}
     for name, path in file_args.items():
         if path is None:
             continue
         if not Path(path).is_file():
             print(f"  WARNING: [{name}] file not found ({path}) — skipping")
             continue
-
-        print(f"\nEvaluating {name} ({path})...")
         try:
-            scores_df = LOADERS[name](path)
+            scores[name] = LOADERS[name](path)
         except (KeyError, ValueError) as e:
             print(f"  ERROR: [{name}] failed to load ({e}) — skipping")
-            continue
 
-        row = evaluate_method(name, scores_df, labels_df, thresholds[name],
-                              args.n_bootstrap, rng)
-        if row is None:
-            continue
-        rows.append(row)
-        print(f"  F1={row['f1']:.4f} [{row['f1_ci_low']:.4f}, {row['f1_ci_high']:.4f}]  "
-              f"AUC={row['auc']:.4f} [{row['auc_ci_low']:.4f}, {row['auc_ci_high']:.4f}]")
+    def run_table(lab, tag):
+        out = []
+        for name, sdf in scores.items():
+            print(f"\nEvaluating {name} [{tag}]...")
+            row = evaluate_method(name, sdf, lab, thresholds[name],
+                                  args.n_bootstrap, rng, gene_df)
+            if row is None:
+                continue
+            row["coverage"] = len(set(sdf["id"]) & set(labels_df["id"])) / len(labels_df)
+            out.append(row)
+            print(f"  F1={row['f1']:.4f} [{row['f1_ci_low']:.4f}, {row['f1_ci_high']:.4f}]  "
+                  f"AUC={row['auc']:.4f} [{row['auc_ci_low']:.4f}, {row['auc_ci_high']:.4f}]")
+        return out
+
+    common_info = None
+    all_rows = run_table(labels_df, "own available set")
+    rows = all_rows
+    if args.common_subset:
+        common = set(labels_df["id"])
+        for sdf in scores.values():
+            common &= set(sdf["id"])
+        dropped = labels_df[~labels_df["id"].isin(common)].copy()
+        dropped["missing_from"] = [",".join(n for n, sdf in scores.items() if i not in set(sdf["id"]))
+                                   for i in dropped["id"]]
+        dropped.to_csv(out_dir / "excluded_ids_common_subset.csv", index=False)
+        lab_c = labels_df[labels_df["id"].isin(common)]
+        common_info = dict(n_common=int(len(common)), n_excluded=int(len(dropped)),
+                           excluded_lnc=int((dropped.y_true == 0).sum()),
+                           excluded_pc=int((dropped.y_true == 1).sum()),
+                           excluded_missing_from=dropped["missing_from"].value_counts().to_dict())
+        print(f"\nCommon subset: {len(common)} of {len(labels_df)} transcripts "
+              f"({len(dropped)} excluded; lnc={common_info['excluded_lnc']}, pc={common_info['excluded_pc']})")
+        pd.DataFrame(all_rows).sort_values("f1", ascending=False).to_csv(
+            out_dir / "benchmark_table_with_ci_allavailable.csv", index=False)
+        rows = run_table(lab_c, "common subset")
 
     if not rows:
         sys.exit("ERROR: no methods evaluated — check that at least one "
                  "--*_csv/--*_tsv argument points to a valid file")
 
     out_df = pd.DataFrame(rows).sort_values("f1", ascending=False)
+    prov = dict(
+        created=datetime.datetime.now().isoformat(timespec="seconds"),
+        n_test_records=int(len(labels_df)),
+        n_lnc=int((labels_df.y_true == 0).sum()), n_pc=int((labels_df.y_true == 1).sum()),
+        n_genes=int(gene_df.loc[gene_df.id.isin(labels_df.id), "gene"].nunique()) if gene_df is not None else None,
+        ci="gene-clustered percentile bootstrap" if gene_df is not None else "isoform-naive",
+        n_bootstrap=args.n_bootstrap, seed=args.seed,
+        thresholds=thresholds,
+        files={k: dict(path=v, sha256_16=sha256_short(v))
+               for k, v in list(file_args.items()) + [("test_lnc_fasta", args.test_lnc_fasta),
+                                                       ("test_pc_fasta", args.test_pc_fasta)]
+               if v and Path(v).is_file()},
+        methods=[r["method"] for r in rows],
+        common_subset=common_info,
+    )
+    (out_dir / "benchmark_provenance.json").write_text(json.dumps(prov, indent=2))
     out_path = out_dir / "benchmark_table_with_ci.csv"
     out_df.to_csv(out_path, index=False)
     print(f"\nSaved: {out_path}")

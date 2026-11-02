@@ -29,9 +29,11 @@
 #     [--use_orthrus       true]  \
 #     [--use_rnasamba      true]  \
 #     [--use_lncrnabert    true]  \
+#     [--common_subset     true]  \
+#     [--hard_def          file|error] \
 #     [--error_only] \
 #     [--min_set_size 5] \
-#     [--orthrus_env  {$HOME}.conda/envs/orthrus] \
+#     [--orthrus_env  ${HOME}/.conda/envs/orthrus] \
 #     [--rnasamba_sif rnasamba.sif] \
 #     [--max_length   10000]
 #
@@ -59,11 +61,23 @@ TRAIN_LNC_FASTA="data/split_gencode_49/lnc_trainval.fa"
 TRAIN_PC_FASTA="data/split_gencode_49/pc_trainval.fa"
 BLNC_PREDICTIONS="gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs/test_predictions.csv"
 FEATURE_ONLY_CSV="gencode_v49_experiments/beta_vae_feature_only_g49/evaluation_csvs/test_predictions.csv"
-LNCRNABERT_CSV="gencode_v49_experiments/benchmark_tools/lncrnabert_test_predictions.csv"
+LNCRNABERT_CSV=""   # default: <base_dir>/benchmark_tools/lncrnabert_test_predictions.csv
+# test_fold_probs.csv (per-fold + ensemble P(pc)); default: next to --blnc_predictions
+FOLD_PROBS=""
+USE_ENSEMBLE_VS_MODELS=true
+# false: legacy splits allowed (warn only). true: abort if test/trainval share genes.
+REQUIRE_GENE_DISJOINT=true
+# true: tables score every method on the transcripts all methods returned
+COMMON_SUBSET=true
+# hard case definition for compare_models/UpSet: file (per-method flag) or error (misclassified, same for all)
+HARD_DEF="file"
+# reuse existing tool outputs (skip Stage 1); override comparison output dir
+SKIP_TOOLS=false
+COMPARISON_DIR_OVERRIDE=""
 
 # Per-method toggles (true/false)
 USE_BLNC=true
-USE_FEATURE_ONLY=false
+USE_FEATURE_ONLY=true
 USE_CPAT=true
 USE_CPC2=true
 USE_LNCDC=true
@@ -78,7 +92,7 @@ CPC2_DIR="cpc2/CPC2_standalone-1.0.1"
 LNCDC_DIR="LncDC-1.3.6"
 R_MODULE="R/4.1.0"
 ORTHRUS_MODEL=""
-ORTHRUS_ENV="{$HOME}.conda/envs/orthrus"
+ORTHRUS_ENV="${HOME}/.conda/envs/orthrus"
 RNASAMBA_WEIGHTS="rnasamba/full_length_weights.hdf5"
 RNASAMBA_SIF="rnasamba.sif"
 THREADS=8
@@ -101,7 +115,14 @@ while [[ $# -gt 0 ]]; do
         --train_pc_fasta)     TRAIN_PC_FASTA="$2";     shift 2 ;;
         --blnc_predictions)   BLNC_PREDICTIONS="$2";   shift 2 ;;
         --feature_only_csv)   FEATURE_ONLY_CSV="$2";   shift 2 ;;
+        --require_gene_disjoint) REQUIRE_GENE_DISJOINT="$2"; shift 2 ;;
+        --skip_tools)         SKIP_TOOLS="$2";         shift 2 ;;
+        --comparison_dir)     COMPARISON_DIR_OVERRIDE="$2"; shift 2 ;;
+        --fold_probs)         FOLD_PROBS="$2";         shift 2 ;;
+        --use_ensemble_vs_models) USE_ENSEMBLE_VS_MODELS="$2"; shift 2 ;;
         --lncrnabert_csv)     LNCRNABERT_CSV="$2";     shift 2 ;;
+        --common_subset)      COMMON_SUBSET="$2";      shift 2 ;;
+        --hard_def)           HARD_DEF="$2";           shift 2 ;;
 
         --use_blnc)           USE_BLNC="$2";           shift 2 ;;
         --use_feature_only)   USE_FEATURE_ONLY="$2";   shift 2 ;;
@@ -143,15 +164,44 @@ done
 
 # ── Derived paths ─────────────────────────────────────────────────────────────
 TOOLS_DIR="${BASE_DIR}/benchmark_tools"
-COMPARISON_DIR="${BASE_DIR}/benchmark_comparison"
+COMPARISON_DIR="${COMPARISON_DIR_OVERRIDE:-${BASE_DIR}/benchmark_comparison}"
 
 CPAT_HARD_CSV="${TOOLS_DIR}/cpat/predictions_with_cpat.csv"
 CPC2_RESULT="${TOOLS_DIR}/cpc2_results.tsv.txt"
 LNCDC_RESULT="${TOOLS_DIR}/lncdc_results.csv"
-ORTHRUS_RESULT="${TOOLS_DIR}/orthrus/orthrus_test_predictions.csv"
+ORTHRUS_RESULT="${TOOLS_DIR}/orthrus_test_predictions.csv"
 RNASAMBA_RESULT="${TOOLS_DIR}/rnasamba_results.tsv"
+LNCRNABERT_CSV="${LNCRNABERT_CSV:-${TOOLS_DIR}/lncrnabert_test_predictions.csv}"
 
 mkdir -p "$COMPARISON_DIR"
+
+# ── Preflight: train/test must be gene-disjoint, predictions must match FASTAs ─
+python - "$LNC_FASTA" "$PC_FASTA" "$TRAIN_LNC_FASTA" "$TRAIN_PC_FASTA" "$BLNC_PREDICTIONS" "$REQUIRE_GENE_DISJOINT" <<'PY'
+import re, sys, csv
+E = re.compile(r"ENSG\d+")
+def ids(fs):
+    t, g = set(), set()
+    for f in fs:
+        for l in open(f):
+            if l.startswith(">"):
+                m = E.search(l); t.add(l[1:].split()[0].split("|")[0].split(".")[0])
+                if m: g.add(m.group(0))
+    return t, g
+te_t, te_g = ids(sys.argv[1:3]); tr_t, tr_g = ids(sys.argv[3:5])
+ov = te_g & tr_g
+print(f"[preflight] test {len(te_t)} records / {len(te_g)} genes; trainval {len(tr_t)} / {len(tr_g)} genes; shared genes: {len(ov)}")
+if ov or (te_t & tr_t):
+    msg = (f"test and trainval share {len(ov)} genes / {len(te_t & tr_t)} records "
+           f"(legacy split). Results are NOT gene-disjoint.")
+    if sys.argv[6] == "true":
+        sys.exit("ERROR: " + msg)
+    print("[preflight] WARNING: " + msg)
+pred = {r["transcript_id"].split("|")[0].split(".")[0] for r in csv.DictReader(open(sys.argv[5]))}
+if pred != te_t:
+    sys.exit(f"ERROR: --blnc_predictions covers {len(pred)} records, test FASTAs {len(te_t)}; "
+             f"{len(pred ^ te_t)} differ (predictions from a different split?)")
+print("[preflight] OK")
+PY
 
 LOG_FILE="${COMPARISON_DIR}/full_benchmark_${RELEASE}_$(date +%Y%m%d_%H%M%S).log"
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
@@ -210,9 +260,14 @@ TOOLS_ARGS=(
 [[ "$USE_LNCDC"    != "true" ]] && TOOLS_ARGS+=(--skip_lncdc)
 [[ "$USE_ORTHRUS"  != "true" ]] && TOOLS_ARGS+=(--skip_orthrus)
 [[ "$USE_RNASAMBA" != "true" ]] && TOOLS_ARGS+=(--skip_rnasamba)
+[[ "$USE_LNCRNABERT" != "true" ]] && TOOLS_ARGS+=(--skip_lncrnabert)
 
 log "Command: bash ${SCRIPT_DIR}/run_benchmark_tools.sh ${TOOLS_ARGS[*]}"
+if [[ "$SKIP_TOOLS" == "true" ]]; then
+    log "  --skip_tools true: reusing existing outputs in ${TOOLS_DIR}"
+else
 bash "${SCRIPT_DIR}/run_benchmark_tools.sh" "${TOOLS_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
+fi
 
 # =============================================================================
 # Stage 2 — compare_models.py
@@ -283,8 +338,10 @@ fi
 [[ -n "$CPAT_THRESHOLD" ]] && COMPARE_ARGS+=(--cpat_threshold "$CPAT_THRESHOLD")
 [[ -n "$CPC2_THRESHOLD" ]] && COMPARE_ARGS+=(--cpc2_threshold "$CPC2_THRESHOLD")
 
-log "Command: python ${SCRIPT_DIR}/compare_models.py ${COMPARE_ARGS[*]}"
-python "${SCRIPT_DIR}/compare_models.py" "${COMPARE_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
+CM_ARGS=("${COMPARE_ARGS[@]}" --hard_def "$HARD_DEF")
+[[ "$COMMON_SUBSET" == "true" ]] && CM_ARGS+=(--common_subset)
+log "Command: python ${SCRIPT_DIR}/compare_models.py ${CM_ARGS[*]}"
+python "${SCRIPT_DIR}/compare_models.py" "${CM_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
 
 PREDICTIONS_MERGED="${COMPARISON_DIR}/predictions_merged.csv"
 if [[ ! -f "$PREDICTIONS_MERGED" ]]; then
@@ -297,8 +354,30 @@ fi
 # =============================================================================
 log_section "Stage 2.5/3 — compute_benchmark_ci.py"
 
-log "Command: python ${SCRIPT_DIR}/compute_benchmark_ci.py ${COMPARE_ARGS[*]} --n_bootstrap 10000"
-python "${SCRIPT_DIR}/compute_benchmark_ci.py" "${COMPARE_ARGS[@]}" --n_bootstrap 10000 2>&1 | tee -a "$LOG_FILE"
+CI_ARGS=("${COMPARE_ARGS[@]}" --test_lnc_fasta "$LNC_FASTA" --test_pc_fasta "$PC_FASTA" --n_bootstrap 10000)
+[[ "$COMMON_SUBSET" == "true" ]] && CI_ARGS+=(--common_subset)
+log "Command: python ${SCRIPT_DIR}/compute_benchmark_ci.py ${CI_ARGS[*]}"
+python "${SCRIPT_DIR}/compute_benchmark_ci.py" "${CI_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
+
+# =============================================================================
+# Stage 2.6 — ensemble_vs_models.py (fold models vs ensemble vs zero-shot lncRNA-BERT)
+# =============================================================================
+if [[ "$USE_ENSEMBLE_VS_MODELS" == "true" ]]; then
+    log_section "Stage 2.6/3 — ensemble_vs_models.py"
+    [[ -z "$FOLD_PROBS" ]] && FOLD_PROBS="$(dirname "$BLNC_PREDICTIONS")/test_fold_probs.csv"
+    if [[ ! -f "$FOLD_PROBS" ]]; then
+        log "  WARNING: ${FOLD_PROBS} not found — skipping ensemble_vs_models"
+    else
+        EVM_ARGS=(--fold_probs "$FOLD_PROBS" --out_dir "$COMPARISON_DIR"
+                  --test_lnc_fasta "$LNC_FASTA" --test_pc_fasta "$PC_FASTA"
+                  --n_bootstrap 10000)
+        if [[ "$USE_LNCRNABERT" == "true" && -f "$LNCRNABERT_CSV" ]]; then
+            EVM_ARGS+=(--lncrnabert "$LNCRNABERT_CSV")
+        fi
+        log "Command: python ${SCRIPT_DIR}/ensemble_vs_models.py ${EVM_ARGS[*]}"
+        PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}" python "${SCRIPT_DIR}/ensemble_vs_models.py" "${EVM_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE" || log "  WARNING: ensemble_vs_models failed"
+    fi
+fi
 
 # =============================================================================
 # Stage 3 — upset_benchmark.py
@@ -324,6 +403,8 @@ python "${SCRIPT_DIR}/upset_benchmark.py" "${UPSET_ARGS[@]}" 2>&1 | tee -a "$LOG
 log_section "Done — GENCODE ${RELEASE}"
 log "Benchmark table     : ${COMPARISON_DIR}/benchmark_table.csv"
 log "Merged predictions  : ${PREDICTIONS_MERGED}"
+log "Ensemble vs models  : ${COMPARISON_DIR}/ensemble_vs_models_f1.csv, ..._diffs.csv"
+log "Provenance          : ${COMPARISON_DIR}/benchmark_provenance.json"
 log "Hard case summary   : ${COMPARISON_DIR}/hard_case_summary*.csv"
 SUFFIX=""
 $ERROR_ONLY && SUFFIX="_error_only"
