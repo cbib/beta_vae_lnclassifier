@@ -97,6 +97,7 @@ class FeatureOnlyClassifier(nn.Module):
         # Accepted for backward compat with old configs; not used internally
         te_features_dim:     Optional[int]   = None,
         nonb_features_dim:   Optional[int]   = None,
+        block_sources:       Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -109,6 +110,12 @@ class FeatureOnlyClassifier(nn.Module):
         self.attn_mode   = attn_mode
         self._registry   = registry
 
+        self.block_sources = {b: BLOCK_DEFS[b].source for b in REGISTRY.block_names}
+        bad = set(block_sources or {}) - set(registry.block_names)
+        if bad: 
+            raise ValueError(f"Unknown blocks: {sorted(bad)}")
+        self.block_sources.update(block_sources or {})
+
         # ── Dynamic sub-group projectors — one per registry block ─────────────
         self.projectors = nn.ModuleDict({
             block_name: SubgroupProjectionLayer(
@@ -116,6 +123,7 @@ class FeatureOnlyClassifier(nn.Module):
                 d_proj   = d_proj,
                 dropout  = fusion_dropout,
                 registry = registry,
+                source   = self.block_sources[block_name],
             )
             for block_name in registry.block_names
         })

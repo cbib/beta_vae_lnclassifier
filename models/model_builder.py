@@ -95,6 +95,7 @@ def create_model_builder(config):
                 'use_token_sa':     config.get('model', 'use_token_sa',     default=False),
                 'token_sa_heads':   config.get('model', 'token_sa_heads',   default=4),
                 'token_sa_layers':  config.get('model', 'token_sa_layers',  default=1),
+                'block_sources':    config.get('model', 'block_sources',    default=None),
                 # Registry drives feature dims — old config keys silently ignored
                 'registry':         REGISTRY,
             })

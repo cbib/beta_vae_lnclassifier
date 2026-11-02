@@ -158,6 +158,8 @@ def train_one_fold(
         history[f"train_feat_{b}"] = []
 
     best_val_loss    = float("inf")
+    best_val_acc     = float("nan")
+    best_epoch       = 0
     patience_counter = 0
 
     for epoch in range(1, num_epochs + 1):
@@ -231,6 +233,8 @@ def train_one_fold(
 
         if val_loss < best_val_loss:
             best_val_loss    = val_loss
+            best_val_acc     = val_acc
+            best_epoch       = epoch
             patience_counter = 0
             torch.save({
                 "model_state_dict": model.state_dict(),
@@ -248,7 +252,8 @@ def train_one_fold(
 
     return model, {
         "val_loss": best_val_loss,
-        "val_acc": max(history["val_acc"]),
+        "val_acc": best_val_acc,          # accuracy at the selected (best-loss) epoch
+        "best_epoch": best_epoch,
         "train_loss": min(history["train_loss"]),
     }, history
 
@@ -293,6 +298,9 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+    seed = config.get("training", "random_state", default=42)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
     output_dir = Path(config.get("output", "experiment_name"))
     output_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(args.device)

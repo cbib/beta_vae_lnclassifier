@@ -10,7 +10,7 @@ via an independent MLP. Supports two input modes controlled by block source:
   source="processed" — x_processed_sg only                 → MLP in_features = 1 * sg_dim
   source="genomic"   — x_genomic_sg only                   → MLP in_features = 1 * sg_dim
 
-The source is read from BLOCK_DEFS in the registry at init time.
+The source is read from BLOCK_DEFS in the registry at init time unless source overrides it.
 SubgroupProjectionLayer.forward() accepts both x_genomic and x_processed
 for all modes; for single-source blocks the unused tensor is simply ignored.
 
@@ -137,6 +137,7 @@ class SubgroupProjectionLayer(nn.Module):
         d_proj:   int             = 64,
         dropout:  float           = 0.1,
         registry: FeatureRegistry = REGISTRY,
+        source: Optional[str] = None,
     ) -> None:
         super().__init__()
 
@@ -149,7 +150,9 @@ class SubgroupProjectionLayer(nn.Module):
         self.block    = block
         self.d_proj   = d_proj
         self._reg     = registry
-        self.source   = BLOCK_DEFS[block].source   # "both" | "processed" | "genomic"
+        self.source   = source or BLOCK_DEFS[block].source   # "both" | "processed" | "genomic"
+        if self.source not in ("both", "processed", "genomic"):
+            raise ValueError(f"Unknown source '{self.source}' for block '{block}'")
 
         subgroups  = registry.block_subgroups(block)
         block_dim  = registry.block_dim(block)

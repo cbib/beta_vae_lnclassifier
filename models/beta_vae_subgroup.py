@@ -206,6 +206,7 @@ class BetaVAESubgroup(nn.Module):
         # Accepted for backward compat with old configs; not used internally
         te_features_dim:   Optional[int]   = None,
         nonb_features_dim: Optional[int]   = None,
+        block_sources: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -271,6 +272,12 @@ class BetaVAESubgroup(nn.Module):
         self.fc_mu     = nn.Linear(self.flatten_size, latent_dim)
         self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
 
+        self.block_sources = {b: BLOCK_DEFS[b].source for b in REGISTRY.block_names}
+        bad = set(block_sources or {}) - set(registry.block_names)
+        if bad: 
+            raise ValueError(f"Unknown blocks: {sorted(bad)}")
+        self.block_sources.update(block_sources or {})
+        
         # ── Dynamic sub-group projectors ──────────────────────────────────────
         # One SubgroupProjectionLayer per block, keyed by block name
         self.projectors = nn.ModuleDict({
@@ -279,6 +286,7 @@ class BetaVAESubgroup(nn.Module):
                 d_proj   = d_proj,
                 dropout  = fusion_dropout,
                 registry = registry,
+                source   = self.block_sources[block_name],
             )
             for block_name in registry.block_names
         })
@@ -520,7 +528,6 @@ class BetaVAESubgroup(nn.Module):
                                       Optional[torch.Tensor]]] = {}
 
         for block_name in self._registry.block_names:
-            source = BLOCK_DEFS[block_name].source
             if block_name == "nonb":
                 block_inputs[block_name] = (nonb_genomic, nonb_processed)
             elif block_name == "te":
@@ -564,12 +571,6 @@ class BetaVAESubgroup(nn.Module):
         for block_name, summary in self._block_summaries.items():
             key = f"feat_logits_{block_name}"
             out[key] = self.feat_classifiers[block_name](summary)
-
-        # Backward compat aliases
-        if "feat_logits_nonb" not in out and "nonb" in self._block_summaries:
-            out["feat_logits_nonb"] = out["feat_logits_nonb"]
-        if "feat_logits_te" not in out and "te" in self._block_summaries:
-            out["feat_logits_te"] = out["feat_logits_te"]
 
         return out
 
