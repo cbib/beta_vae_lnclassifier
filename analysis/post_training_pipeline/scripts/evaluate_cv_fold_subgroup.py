@@ -34,7 +34,6 @@ python src/evaluate_cv_subgroup.py \\
 """
 
 from __future__ import annotations
-from data.cv_utils import get_cv_splits_from_config
 
 import argparse
 import gc
@@ -55,7 +54,7 @@ from tqdm import tqdm
 
 from configs.load_config import load_config
 from data.cv_utils import (
-    create_length_stratified_groups,
+    get_cv_splits_from_config,
     load_sequences_in_order,
 )
 from data.gated_feature_dataset import SequenceFeatureDataset
@@ -91,6 +90,15 @@ def _build_dataset(config, lnc_fasta=None, pc_fasta=None) -> SequenceFeatureData
 
 def _get_splits(config, all_sequences, labels):
     return get_cv_splits_from_config(config, all_sequences, labels)
+
+
+def _load_weights(model, ckpt, tag: str = "") -> None:
+    """Load with strict=False but report missing / unexpected keys."""
+    res = model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    if res.missing_keys or res.unexpected_keys:
+        print(f"  WARNING{tag}: {len(res.missing_keys)} missing / "
+              f"{len(res.unexpected_keys)} unexpected keys "
+              f"(missing e.g. {res.missing_keys[:3]})")
 
 
 def _forward_batch(model, batch, device):
@@ -273,12 +281,14 @@ def evaluate_test_ensemble(
     labels_arr = None
     all_ids    = []
     cv_rows    = []
+    fold_p_pc  = []     # per-fold P(pc), for per-model scoring
+    per_fold   = []     # per-fold test metrics (macro, as for the ensemble)
 
     for fold_idx in range(n_folds):
         ckpt_path = experiment_dir / "models" / f"fold_{fold_idx}_best.pt"
         ckpt      = torch.load(ckpt_path, map_location=device)
         model     = model_builder()
-        model.load_state_dict(ckpt["model_state_dict"], strict=False)
+        _load_weights(model, ckpt, f" (fold {fold_idx})")
         model.to(device)
         model.eval()
         print(f"  Fold {fold_idx}: epoch={ckpt['epoch']}  "
@@ -297,6 +307,13 @@ def evaluate_test_ensemble(
         fp         = np.vstack(fold_probs_list)   # (N, 2) — temporary per fold
         labels_arr = np.concatenate(fold_labels_list)
         sum_probs += fp
+        fold_p_pc.append(fp[:, 1].copy())
+        _, _, f1_fold, _ = precision_recall_fscore_support(
+            labels_arr, fp.argmax(axis=1), average="macro", zero_division=0)
+        per_fold.append(dict(
+            fold=fold_idx,
+            accuracy=float(accuracy_score(labels_arr, fp.argmax(axis=1))),
+            f1=float(f1_fold)))
 
         # Accumulate per-sample confidence/prediction scalars
         fold_preds = fp.argmax(axis=1)
@@ -332,6 +349,7 @@ def evaluate_test_ensemble(
         recall=float(recall), f1=float(f1),
         confusion_matrix=cm.tolist(),
         n_samples=int(n_samples), n_folds=n_folds,
+        per_fold=per_fold,
     )
 
     idx_to_label = {0: "lnc", 1: "pc"}
@@ -372,6 +390,16 @@ def evaluate_test_ensemble(
 
     with open(output_dir / "test_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
+
+    # per-model probabilities on the same test transcripts (ensemble = mean)
+    fold_df = pd.DataFrame({
+        "transcript_id": df["transcript_id"],
+        "true_label":    df["true_label"],
+        **{f"p_pc_fold{k}": p for k, p in enumerate(fold_p_pc)},
+        "p_pc_ensemble": avg_probs[:, 1],
+    })
+    fold_df.to_csv(output_dir / "test_fold_probs.csv", index=False)
+    print(f"  test_fold_probs.csv  : per-fold P(pc) for {n_folds} models")
 
     return metrics
 
@@ -451,7 +479,7 @@ def main():
 
         ckpt  = torch.load(ckpt_path, map_location=device)
         model = model_builder()
-        model.load_state_dict(ckpt["model_state_dict"], strict=False)
+        _load_weights(model, ckpt, f" (fold {fold_idx})")
         model.to(device)
         print(f"  Loaded epoch={ckpt['epoch']}  val_acc={ckpt['val_acc']:.4f}")
 
