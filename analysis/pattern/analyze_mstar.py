@@ -48,6 +48,7 @@ mstar_analysis/
 """
 
 import argparse
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -597,98 +598,89 @@ def plot_within_std(
 # Fréchet distance per sub-group
 # ---------------------------------------------------------------------------
 
+def frechet_cov_term(S1, S2, tag="", rel_tol=1e-6):
+    """Covariance term of W2^2 between two Gaussians.
+
+    Returns (value, status). On numerical failure returns (NaN, "failed:<why>")
+    and warns; never substitutes 0.
+    """
+    scale = float(np.trace(S1) + np.trace(S2)) or 1.0
+    try:
+        if not (np.isfinite(S1).all() and np.isfinite(S2).all()):
+            raise FloatingPointError("non-finite covariance")
+        r1 = scipy_sqrtm(S1)
+        r2 = scipy_sqrtm(r1 @ S2 @ r1)
+        if not (np.isfinite(r1).all() and np.isfinite(r2).all()):
+            raise FloatingPointError("non-finite square root")
+        imag = max(float(np.abs(np.imag(r1)).max()),
+                   float(np.abs(np.imag(r2)).max()))
+        if imag > rel_tol * scale:
+            raise FloatingPointError(f"imaginary part {imag:.2e}")
+        val = float(np.trace(S1 + S2 - 2.0 * np.real(r2)))
+    except Exception as exc:
+        warnings.warn(f"Frechet covariance term failed for {tag or 'sub-group'}: {exc}")
+        return float("nan"), f"failed:{type(exc).__name__}"
+    if val < -rel_tol * scale:
+        warnings.warn(f"Frechet covariance term negative for {tag or 'sub-group'}: {val:.3e}")
+        return float("nan"), "failed:negative_cov_term"
+    return max(val, 0.0), "ok"
+
+
+
 def frechet_analysis(
     block_dfs: dict,           # {block_name: pd.DataFrame} raw features per block
     labels:    np.ndarray,     # (N,) 0=lncRNA 1=mRNA
     reg:       float = 1e-4,   # diagonal regularisation
 ) -> dict:
     """
-    Compute per-sub-group Fréchet distance between lncRNA and mRNA
-    class-conditional distributions.
+    Per-sub-group Frechet (W2^2) distance between lncRNA and mRNA Gaussians:
+    FD = ||mu1 - mu2||^2 + trace(S1 + S2 - 2 (S1^1/2 S2 S1^1/2)^1/2).
 
-    The Fréchet (Wasserstein-2) distance between two Gaussians
-    N(μ₁, Σ₁) and N(μ₂, Σ₂) is:
-
-        FD² = ||μ₁ - μ₂||² + trace(Σ₁ + Σ₂ - 2·(Σ₁^{1/2} Σ₂ Σ₁^{1/2})^{1/2})
-
-    The first term captures mean shift (equivalent to M* squared).
-    The second term captures covariance differences — invisible to M*.
-
-    For each sub-group sg with k raw features:
-      - Fit N(μ_lnc, Σ_lnc) and N(μ_mrna, Σ_mrna) on the k raw features
-      - Compute FD(sg) = Wasserstein-2 distance between the two Gaussians
-      - Decompose into mean_term and cov_term to show M* vs covariance contribution
-
-    Returns
-    -------
-    dict with:
-      frechet_scores : (n_subgroups,) — FD per sub-group
-      mean_terms     : (n_subgroups,) — ||μ_lnc - μ_mrna||² per sub-group
-      cov_terms      : (n_subgroups,) — covariance contribution per sub-group
-      subgroup_names : list of sub-group names in order
+    Returns dict: frechet_scores, mean_terms, cov_terms, status, subgroup_names.
+    NaN (with status "failed:...") marks a failed or missing computation;
+    it is never reported as 0.
     """
-    from sklearn.preprocessing import StandardScaler
-
-    frechet_scores = []
-    mean_terms     = []
-    cov_terms      = []
+    scores, means, covs, statuses, names = [], [], [], [], []
+    nan = float("nan")
 
     for block_name in REGISTRY.block_names:
         df = block_dfs.get(block_name)
         if df is None:
             continue
         for sg in REGISTRY.block_subgroups(block_name):
-            idx  = REGISTRY.indices_for_subgroup(sg)
+            names.append(sg)
+            idx = REGISTRY.indices_for_subgroup(sg)
             if not idx:
-                frechet_scores.append(0.0)
-                mean_terms.append(0.0)
-                cov_terms.append(0.0)
+                warnings.warn(f"Frechet: no features for sub-group {sg}")
+                scores.append(nan); means.append(nan); covs.append(nan)
+                statuses.append("failed:no_features")
                 continue
 
-            X_sg = df.iloc[:, idx].values.astype(np.float64)
-
-            # Z-score within this sub-group for numerical stability
-            sc   = StandardScaler()
-            X_z  = sc.fit_transform(X_sg)
-
-            X_lnc  = X_z[labels == 0]
-            X_mrna = X_z[labels == 1]
-
-            mu1 = X_lnc.mean(axis=0)
-            mu2 = X_mrna.mean(axis=0)
-
+            X_z = StandardScaler().fit_transform(
+                df.iloc[:, idx].values.astype(np.float64))
+            X_lnc, X_mrna = X_z[labels == 0], X_z[labels == 1]
+            mu1, mu2 = X_lnc.mean(axis=0), X_mrna.mean(axis=0)
             S1 = np.cov(X_lnc.T) + reg * np.eye(X_z.shape[1])
             S2 = np.cov(X_mrna.T) + reg * np.eye(X_z.shape[1])
 
-            # Handle 1-feature sub-groups (scalar covariance)
-            if S1.ndim == 0:
-                S1 = np.array([[float(S1)]])
-                S2 = np.array([[float(S2)]])
-
-            # Mean term: ||μ₁ - μ₂||²
             mean_term = float(np.sum((mu1 - mu2) ** 2))
+            cov_term, status = frechet_cov_term(S1, S2, tag=sg)
 
-            # Covariance term: trace(S1 + S2 - 2·(S1^{1/2} S2 S1^{1/2})^{1/2})
-            try:
-                S1_sqrt     = scipy_sqrtm(S1).real
-                inner       = S1_sqrt @ S2 @ S1_sqrt
-                inner_sqrt  = scipy_sqrtm(inner).real
-                cov_term    = float(np.trace(S1 + S2 - 2 * inner_sqrt))
-                cov_term    = max(cov_term, 0.0)   # numerical guard
-            except Exception:
-                cov_term = 0.0
+            scores.append(mean_term + cov_term)   # NaN propagates
+            means.append(mean_term); covs.append(cov_term)
+            statuses.append(status)
 
-            fd = mean_term + cov_term
-
-            frechet_scores.append(fd)
-            mean_terms.append(mean_term)
-            cov_terms.append(cov_term)
+    if names != list(ALL_SUBGROUPS):
+        raise ValueError(
+            "Frechet sub-group order differs from ALL_SUBGROUPS "
+            f"(missing block?): {names} vs {list(ALL_SUBGROUPS)}")
 
     return {
-        "frechet_scores": np.array(frechet_scores),
-        "mean_terms":     np.array(mean_terms),
-        "cov_terms":      np.array(cov_terms),
-        "subgroup_names": ALL_SUBGROUPS,
+        "frechet_scores": np.array(scores),
+        "mean_terms":     np.array(means),
+        "cov_terms":      np.array(covs),
+        "status":         np.array(statuses, dtype=object),
+        "subgroup_names": names,
     }
 
 
@@ -705,13 +697,13 @@ def plot_frechet_ranking(
     scores = frechet_result["frechet_scores"]
     means  = frechet_result["mean_terms"]
     covs   = frechet_result["cov_terms"]
-    order  = np.argsort(scores)[::-1]
+    order  = np.argsort(np.nan_to_num(scores, nan=-np.inf))[::-1]
     n_nonb = len(NONB_SUBGROUPS)
 
     ordered_names  = [ALL_SUBGROUPS[i] for i in order]
     ordered_means  = means[order]
     ordered_covs   = covs[order]
-    edge_colors    = ["#185FA5" if i < n_nonb else "#BA7517" for i in order]
+    edge_colors    = [_sg_edge(ALL_SUBGROUPS[i]) for i in order]
 
     fig, ax = plt.subplots(figsize=(13, 5))
     fig.patch.set_facecolor("white")
@@ -841,7 +833,7 @@ def plot_frechet_vs_mstar(
     differences are accounted for.
     """
     fd_scores = frechet_result["frechet_scores"]
-    fd_order  = np.argsort(fd_scores)[::-1]
+    fd_order  = np.argsort(np.nan_to_num(fd_scores, nan=-np.inf))[::-1]
     fd_ranks  = {ALL_SUBGROUPS[i]: r + 1
                  for r, i in enumerate(fd_order)}
 
@@ -1152,6 +1144,8 @@ def main():
     # ── Load and aggregate ────────────────────────────────────────────────────
     block_dfs, labels = load_features(config)
     subgroup_df             = aggregate_to_subgroups(block_dfs)
+    assert list(subgroup_df.columns) == list(ALL_SUBGROUPS), \
+        'sub-group column order differs from ALL_SUBGROUPS'
 
     # ── Z-score ───────────────────────────────────────────────────────────────
     print("\nZ-scoring sub-group matrix...")
@@ -1176,7 +1170,7 @@ def main():
         mrna_vals = X[labels == 1, i]
         profile_rows.append({
             "subgroup":   sg,
-            "block":      "nonb" if sg in NONB_SUBGROUPS else "te",
+            "block": REGISTRY.token_block(sg),
             "lnc_mean":   float(lnc_vals.mean()),
             "lnc_std":    float(lnc_vals.std()),
             "mrna_mean":  float(mrna_vals.mean()),
@@ -1247,7 +1241,7 @@ def main():
     for i, sg in enumerate(ALL_SUBGROUPS):
         snr_rows.append({
             "subgroup":   sg,
-            "block":      "nonb" if sg in NONB_SUBGROUPS else "te",
+            "block": REGISTRY.token_block(sg),
             "snr":        float(lda_result["snr"][i]),
             "within_std": float(lda_result["within_std"][i]),
             "delta":      float(lda_result["delta"][i]),
@@ -1292,17 +1286,25 @@ def main():
 
     fd_rows = []
     for i, sg in enumerate(ALL_SUBGROUPS):
+        fd_i  = float(frechet_result["frechet_scores"][i])
+        cov_i = float(frechet_result["cov_terms"][i])
         fd_rows.append({
             "subgroup":       sg,
-            "block":          "nonb" if sg in NONB_SUBGROUPS else "te",
-            "frechet_dist":   float(frechet_result["frechet_scores"][i]),
+            "block":          REGISTRY.token_block(sg),
+            "frechet_dist":   fd_i,
             "mean_term":      float(frechet_result["mean_terms"][i]),
-            "cov_term":       float(frechet_result["cov_terms"][i]),
-            "cov_fraction":   float(frechet_result["cov_terms"][i] /
-                              max(frechet_result["frechet_scores"][i], 1e-8)),
+            "cov_term":       cov_i,
+            "cov_fraction":   (cov_i / max(fd_i, 1e-8)) if np.isfinite(fd_i) else float("nan"),
+            "fd_status":      str(frechet_result["status"][i]),
         })
-    fd_df = pd.DataFrame(fd_rows).sort_values("frechet_dist", ascending=False)
+    fd_df = pd.DataFrame(fd_rows).sort_values(
+        "frechet_dist", ascending=False, na_position="last")
     fd_df.to_csv(output_dir / "frechet_ranking.csv", index=False)
+    n_failed = int((fd_df["fd_status"] != "ok").sum())
+    if n_failed:
+        print(f"\n  WARNING: Frechet distance failed for {n_failed} sub-group(s): "
+              + ", ".join(fd_df.loc[fd_df["fd_status"] != "ok", "subgroup"])
+              + "  (NaN in frechet_ranking.csv, see fd_status)")
 
     print("\nFréchet distance ranking (mean shift + covariance):")
     print(f"  {'Rank':<5} {'Sub-group':<15} {'FD':>8}  "
@@ -1413,26 +1415,9 @@ def main():
 
     summary_lines += [
         "",
-        "6. Comparison with model ablation ranking (feature_zero):",
-        "   Sub-group     | M* rank | SNR rank | Ablation rank",
-        "   " + "-" * 50,
+        "6. Ablation ranks are not reported here (they depend on the trained",
+        "   model). See the interpretability figure / ablation outputs.",
     ]
-    ablation_ranks = {
-        "IR": 1, "TE_CORE": 2, "GQ": 3, "GLOBAL": 4, "STR": 5,
-        "DR": 6, "APR": 7, "Z": 8, "TRI": 9,
-        "TE_LCTR": 11, "TE_UNKNOWN": 12, "TE_GLOBAL": 13,
-        "TE_QUALITY": 10, "MR": 14, "TE_PSEUDO": 15,
-    }
-    mstar_ranks = {row["subgroup"]: r+1
-                   for r, (_, row) in enumerate(profiles_df.iterrows())}
-    snr_ranks   = {row["subgroup"]: r+1
-                   for r, (_, row) in enumerate(snr_df.iterrows())}
-    for sg in ALL_SUBGROUPS:
-        summary_lines.append(
-            f"   {sg:<15}  M*={mstar_ranks.get(sg,'?'):>2}  "
-            f"SNR={snr_ranks.get(sg,'?'):>2}  "
-            f"Ablation={ablation_ranks.get(sg,'?'):>2}"
-        )
 
     summary_text = "\n".join(summary_lines)
     print("\n" + summary_text)
