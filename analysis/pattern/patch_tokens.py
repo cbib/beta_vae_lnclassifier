@@ -1,83 +1,50 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-analysis/pattern/patch_tokens_v2.py
+analysis/pattern/patch_tokens.py
 
-Token-level activation patching for causal interpretability of BetaVAESubgroup —
-extended version supporting multiple patch SCOPES and a shuffled-pairing NULL
-CONTROL, on top of the original single-token patching in patch_tokens.py.
+Token-level activation patching for BetaVAESubgroup: matched-pair interchange
+interventions over several scopes, with partner and noise controls.
 
-This file is additive / non-destructive: it does not modify patch_tokens.py.
-It re-implements the pair-selection and token-caching steps identically (same
-RNG seeding, same matching constraints) so results are directly comparable to
-the original single-token run, and adds three things:
+Patch modes (--patch_modes, default single,block,all)
+-----------------------------------------------------
+  single    one subgroup token.
+  block     all tokens of one block (te / nonb / nonb2).
+  all       all 20 subgroup tokens (ceiling case; scope recorded as "ALL").
+  shuffled  partner = random opposite-class transcript (same confidence
+            filter, no length/GC match); tests partner matching.
+  sameclass partner = another transcript of the baseline's own class; its
+            flip rate and |mean delta_logit| are the noise floor.
+  noise     partner = isotropic random vector with the per-token L2 norm of
+            the shuffled partner (same baselines -> paired comparison).
+Matched pairs are shared by single/block/all; shuffled, sameclass and noise
+use independent RNG streams. --null_scopes (default single,block,all) sets
+the scopes the three controls cover.
 
-Patch scopes (--patch_modes, comma-separated, default: single,block,all)
---------------------------------------------------------------------------
-  single : original behaviour — patch exactly one subgroup token.
-  block  : patch every subgroup token belonging to one block (te / nonb /
-           nonb2) simultaneously — one row per (block, pair, direction).
-  all    : patch all 20 subgroup tokens simultaneously — the ceiling case.
-           One row per (pair, direction), block/subgroup recorded as "ALL".
+Patch site (--patch_site)
+-------------------------
+  projector   (default) patch model.projectors[block], i.e. the raw token
+              before it is stored for the per-block summaries and passed to
+              token_norm, so the patch reaches both the cross-attention/z
+              path and the summary path.
+  token_norm  legacy single-path hook, for comparison only; do not mix its
+              output with projector-site output.
+Every row carries patch_site. An existing fold CSV is reused only if its
+patch_site matches; legacy CSVs (no column) are refused, so write to a
+fresh --output_dir.
 
-This gives three points on a sufficiency curve: single token -> block ->
-full token pathway. If single-token IIA is low but all-token IIA is high,
-no individual subgroup is causally SUFFICIENT alone, even where symmetry
-score suggested strong reliance — motivates joint/multi-token analysis
-(Track A, A5). If block IIA is close to all-token IIA, the block is doing
-essentially all the work and other blocks are close to causally inert;
-if block IIA is well below single-token IIA of its best member, that's
-evidence of interference/redundancy rather than superadditivity.
-
-Shuffled-pairing null control (--patch_modes shuffled)
---------------------------------------------------------------------------
-  For each subgroup and direction, instead of the length/GC-matched partner
-  transcript, the patch vector is drawn from a RANDOMLY CHOSEN transcript of
-  the target class elsewhere in the val set (same confidence filter, no
-  length/GC matching). Same IIA computation. This tests whether IIA under
-  matched patching reflects genuine class-identity content in the token
-  (matched >> shuffled) or just generic sensitivity to any perturbation of
-  that token position (matched ~= shuffled). Uses a separate RNG stream
-  (seed offset) so it doesn't disturb the matched-pair selection.
-
-Output
-------
-<output_dir>/
-  fold_N_patching.csv       per-pair results for fold N, all modes
-  all_folds_patching.csv    concatenated long-format results
-  patching_summary.csv      cross-fold mean +/- std per
-                                (patch_mode, scope, direction)
-
-Schema additions vs. the original all_folds_patching.csv:
-  patch_mode   : "single" | "block" | "all" | "shuffled"
-  patch_scope  : subgroup name (single/shuffled) | block name (block) | "ALL"
+Output (<output_dir>/)
+----------------------
+  fold_N_patching.csv, all_folds_patching.csv (long format), and
+  patching_summary.csv (cross-fold mean/std per patch_mode, scope, direction).
+  Columns: patch_mode, patch_scope (subgroup | block | "ALL"), scope_level,
+  partner_dataset_idx, patch_site.
 
 Usage
 -----
-python analysis/pattern/patch_tokens_v2.py \\
-    --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
-    --config          configs/beta_vae_subgroup_base_g49.json \\
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/patching_v2 \\
-    --device          cuda:0 \\
-    --n_pairs         200 \\
-    --min_confidence  0.7 \\
-    --max_length_diff 0.2 \\
-    --max_gc_diff     0.05 \\
-    --patch_modes     single,block,all,shuffled
-
-Notes
------
-- Hook placement, z-freezing, pair-matching constraints, and RNG seeding for
-  matched pairs are identical to patch_tokens.py, so single-mode results in
-  this file should closely reproduce (up to negligible RNG-path differences
-  introduced by shared code execution order) the original all_folds output.
-  Treat this file as the source of truth going forward for anything that
-  needs block/all/shuffled scopes; keep patch_tokens.py for the archived
-  single-token-only run referenced in the poster.
-- "single" mode is included here (not just imported) so that a single command
-  produces all four modes together with consistent pairing across modes
-  within a fold — the same matched pairs are reused for single/block/all,
-  and only "shuffled" draws an independent partner.
+python analysis/pattern/patch_tokens.py \\
+    --experiment_dir EXP --config CFG --output_dir OUT \\
+    --n_pairs 200 --patch_modes single,block,all,shuffled,sameclass,noise
 """
 
 from __future__ import annotations
@@ -100,6 +67,10 @@ from models.model_builder import create_model_builder
 from data.cv_utils import load_sequences_in_order, create_length_stratified_groups
 from data.gated_feature_dataset import SequenceFeatureDataset
 from data.feature_registry import REGISTRY
+
+# Where interchange interventions are applied (see module docstring).
+PATCH_SITES = ("projector", "token_norm")
+DEFAULT_PATCH_SITE = "projector"
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +170,40 @@ def select_shuffled_partners(
     return rng.choice(pool, size=n, replace=True)
 
 
+def select_same_class_partners(
+    val_indices:    np.ndarray,
+    labels:         list,
+    confidences:    np.ndarray,
+    min_confidence: float,
+    label:          str,
+    baseline_idx:   np.ndarray,
+    rng:            np.random.Generator,
+) -> np.ndarray:
+    """Per baseline index (class `label`), a different high-confidence
+    same-class transcript, drawn with replacement, no length/GC match."""
+    local = select_shuffled_partners(
+        val_indices=val_indices, labels=labels, confidences=confidences,
+        min_confidence=min_confidence, target_label=label,
+        n=len(baseline_idx), rng=rng)
+    if len(local) == 0:
+        return np.array([], dtype=int)
+    partners = val_indices[local]
+    clash = partners == np.asarray(baseline_idx)
+    if clash.any():  # a self-patch is the identity; shift to a neighbour draw
+        partners = np.where(clash, np.roll(partners, 1), partners)
+    return partners
+
+
+def make_noise_vectors(partner_vectors: torch.Tensor,
+                       generator: torch.Generator) -> torch.Tensor:
+    """Isotropic random vectors with the per-token L2 norm of
+    `partner_vectors` (n_positions, d_proj); same shape/device/dtype."""
+    g = torch.randn(partner_vectors.shape, generator=generator)
+    g = g / g.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    norms = partner_vectors.detach().norm(dim=-1, keepdim=True).cpu()
+    return (g * norms).to(partner_vectors.device, partner_vectors.dtype)
+
+
 # ---------------------------------------------------------------------------
 # Token cache hook
 # ---------------------------------------------------------------------------
@@ -220,6 +225,130 @@ class TokenCache:
         if self._handle is not None:
             self._handle.remove()
             self._handle = None
+
+
+# ---------------------------------------------------------------------------
+# Projector-site capture / patching
+# ---------------------------------------------------------------------------
+# Hooking model.projectors[block] intercepts the raw token upstream of both
+# the cross-attention path (via token_norm) and the per-block summaries.
+
+def build_token_layout(
+    model,
+    token_names: list[str],
+    block_map:   dict[str, str],
+    block_names: list[str],
+) -> list[tuple[str, int]]:
+    """Map each token position to (block_name, row_within_block_output).
+    Raises ValueError if token_names does not follow encode()'s concatenation
+    order or the per-block counts disagree."""
+    counts = {b: len(REGISTRY.block_subgroups(b)) for b in block_names}
+    offsets, running = {}, 0
+    for b in block_names:
+        offsets[b] = running
+        running += counts[b]
+    if running != len(token_names):
+        raise ValueError(
+            f"token_names has {len(token_names)} entries but the registry "
+            f"blocks sum to {running} tokens."
+        )
+
+    layout: list[tuple[str, int]] = []
+    for pos, sg in enumerate(token_names):
+        block = block_map[sg]
+        row   = list(REGISTRY.block_subgroups(block)).index(sg)
+        if offsets[block] + row != pos:
+            raise ValueError(
+                f"Token '{sg}' sits at position {pos} in token_names but "
+                f"encode() concatenates it at {offsets[block] + row} "
+                f"(block '{block}', row {row})."
+            )
+        layout.append((block, row))
+
+    model_counts = getattr(model, "_block_token_counts", None)
+    if model_counts is not None:
+        got = {b: model_counts[b] for b in block_names}
+        if got != counts:
+            raise ValueError(
+                f"Model block token counts {got} != registry counts {counts}."
+            )
+    missing = [b for b in block_names if b not in model.projectors]
+    if missing:
+        raise ValueError(f"model.projectors has no entry for blocks: {missing}")
+    return layout
+
+
+class ProjectorTokenCache:
+    """Captures raw (pre-token_norm) tokens from every model.projectors[block],
+    concatenated in registry order; `.tokens` is (B, N_tokens, d_proj)."""
+
+    def __init__(self):
+        self.tokens: Optional[torch.Tensor] = None
+        self._handles: list = []
+        self._per_block: dict[str, torch.Tensor] = {}
+
+    def register(self, model):
+        self._per_block = {}
+        for block in REGISTRY.block_names:
+            self._handles.append(
+                model.projectors[block].register_forward_hook(
+                    self._make_hook(block)))
+
+    def _make_hook(self, block):
+        def _hook(module, input, output):
+            # output: (B, n_subgroups_in_block, d_proj)
+            self._per_block[block] = output.detach()
+            if len(self._per_block) == len(REGISTRY.block_names):
+                self.tokens = torch.cat(
+                    [self._per_block[b] for b in REGISTRY.block_names], dim=1)
+                # reset per forward pass so stale blocks are never mixed in
+                self._per_block = {}
+        return _hook
+
+    def remove(self):
+        for h in self._handles:
+            h.remove()
+        self._handles = []
+
+
+def register_projector_patch_hooks(model, layout, positions, vectors) -> list:
+    """
+    Register one forward hook per block touched by `positions`, replacing the
+    corresponding rows of that block's projector output with `vectors`.
+
+    positions : global token positions (indices into the layout).
+    vectors   : (len(positions), d_proj)            shared across the batch
+                (batch-size-1 callers) or
+                (B, len(positions), d_proj)         one source vector set per
+                batch item (batched callers).
+
+    Returns the list of hook handles; the caller must .remove() them.
+    """
+    by_block: dict[str, tuple[list[int], list[int]]] = {}
+    for j, pos in enumerate(positions):
+        block, row = layout[pos]
+        rows, idxs = by_block.setdefault(block, ([], []))
+        rows.append(row)
+        idxs.append(j)
+
+    handles = []
+    for block, (rows, idxs) in by_block.items():
+        n_rows = len(REGISTRY.block_subgroups(block))
+
+        def _hook(module, input, output, _rows=rows, _idxs=idxs,
+                  _vecs=vectors, _n=n_rows):
+            if output.shape[1] != _n:
+                raise RuntimeError(
+                    f"Projector output has {output.shape[1]} token rows, "
+                    f"expected {_n}.")
+            patched = output.clone()
+            for r, j in zip(_rows, _idxs):
+                patched[:, r, :] = (_vecs[j] if _vecs.dim() == 2
+                                    else _vecs[:, j, :])
+            return patched
+
+        handles.append(model.projectors[block].register_forward_hook(_hook))
+    return handles
 
 
 # ---------------------------------------------------------------------------
@@ -264,10 +393,12 @@ def build_fwd_kwargs(sample_or_batch, device, has_nonb2, batched: bool):
     return fwd
 
 
-def get_tokens_single(model, dataset, idx: int, device, has_nonb2) -> torch.Tensor:
-    """Return (N_tokens, d_proj) cached token tensor for dataset index idx."""
+def get_tokens_single(model, dataset, idx: int, device, has_nonb2,
+                      patch_site: str = DEFAULT_PATCH_SITE) -> torch.Tensor:
+    """(N_tokens, d_proj) tokens for dataset index idx: raw for "projector",
+    post-norm for "token_norm"."""
     sample = dataset[idx]
-    cache = TokenCache()
+    cache = TokenCache() if patch_site == "token_norm" else ProjectorTokenCache()
     cache.register(model)
 
     seq = sample["sequence"].unsqueeze(0).to(device)
@@ -294,24 +425,58 @@ def get_logits_single(model, dataset, idx: int, device, has_nonb2) -> tuple[floa
 
 
 def get_patched_logits(model, dataset, idx: int, device, has_nonb2,
-                        positions: list[int], vectors: torch.Tensor) -> tuple[float, float]:
-    """Run one forward pass with token positions `positions` replaced by
-    `vectors` (shape (len(positions), d_proj)). Returns (logit_mRNA, prob_mRNA)."""
+                        positions: list[int], vectors: torch.Tensor,
+                        patch_site: str = DEFAULT_PATCH_SITE,
+                        layout=None) -> tuple[float, float]:
+    """One forward pass with `positions` replaced by `vectors`
+    (len(positions), d_proj); returns (logit_mRNA, prob_mRNA). "projector"
+    needs `layout` and raw-token vectors."""
     sample = dataset[idx]
     seq = sample["sequence"].unsqueeze(0).to(device)
     fwd = build_fwd_kwargs(sample, device, has_nonb2, batched=False)
 
-    hook_fn = make_patch_hook(positions, vectors)
-    handle = model.token_norm.register_forward_hook(hook_fn)
+    if patch_site == "token_norm":
+        hook_fn = make_patch_hook(positions, vectors)
+        handles = [model.token_norm.register_forward_hook(hook_fn)]
+    else:
+        if layout is None:
+            raise ValueError("patch_site='projector' requires `layout` "
+                             "(see build_token_layout).")
+        handles = register_projector_patch_hooks(model, layout, positions, vectors)
     try:
         with torch.no_grad():
             out = model(seq, **fwd)
     finally:
-        handle.remove()
+        for handle in handles:
+            handle.remove()
 
     logit = out["logits"][0, 1].item()
     prob  = torch.softmax(out["logits"], dim=1)[0, 1].item()
     return logit, prob
+
+
+# ---------------------------------------------------------------------------
+# Hook sanity check
+# ---------------------------------------------------------------------------
+
+def self_patch_sanity_check(model, dataset, indices, device, has_nonb2,
+                            token_names, patch_site, layout, atol=1e-4):
+    """Patching a transcript with its own cached tokens must leave its logit
+    unchanged (single and all scopes); raises RuntimeError otherwise."""
+    all_pos = list(range(len(token_names)))
+    for idx in indices:
+        toks = get_tokens_single(model, dataset, idx, device, has_nonb2,
+                                 patch_site=patch_site)
+        base, _ = get_logits_single(model, dataset, idx, device, has_nonb2)
+        for positions in ([0], all_pos):
+            patched, _ = get_patched_logits(
+                model, dataset, idx, device, has_nonb2, positions,
+                toks[positions], patch_site=patch_site, layout=layout)
+            if abs(patched - base) > atol:
+                raise RuntimeError(
+                    f"Self-patch check failed (patch_site={patch_site}, "
+                    f"idx={idx}, n_positions={len(positions)}): "
+                    f"baseline logit {base:.6f} vs self-patched {patched:.6f}.")
 
 
 # ---------------------------------------------------------------------------
@@ -335,8 +500,14 @@ def patch_fold(
     block_names:     list[str],
     patch_modes:     list[str],
     n_shuffled:      int,
+    patch_site:      str = DEFAULT_PATCH_SITE,
+    null_scopes:     tuple = ("single", "block", "all"),
 ) -> pd.DataFrame:
     model.eval()
+
+    # token -> (block, row) map for projector-site hooks
+    layout = (build_token_layout(model, token_names, block_map, block_names)
+              if patch_site == "projector" else None)
 
     # ── Step 1: metadata pass (confidence, length, GC) ──────────────────────
     print(f"  Collecting val set metadata ({len(val_indices):,} samples)...")
@@ -413,17 +584,38 @@ def patch_fold(
     shuf_lnc_dataset_idx  = (val_indices[shuf_lnc_local]
                               if len(shuf_lnc_local) else np.array([], dtype=int))
 
+    # same-class partners (independent RNG); baselines match the shuffled rows
+    same_lnc_dataset_idx  = np.array([], dtype=int)
+    same_mrna_dataset_idx = np.array([], dtype=int)
+    if "sameclass" in patch_modes:
+        same_rng = np.random.default_rng(seed=9142 + fold_idx)
+        base_l = lnc_dataset_idx[np.arange(n_shuf) % n_actual]
+        base_m = mrna_dataset_idx[np.arange(n_shuf) % n_actual]
+        same_lnc_dataset_idx = select_same_class_partners(
+            val_indices, labels, confidences, min_confidence, "lnc", base_l, same_rng)
+        same_mrna_dataset_idx = select_same_class_partners(
+            val_indices, labels, confidences, min_confidence, "pc", base_m, same_rng)
+
     # ── Step 4: cache token representations ─────────────────────────────────
     # Union of every dataset index we'll ever need a token vector from:
     # matched pairs + shuffled partners.
     needed_idx = set(lnc_dataset_idx.tolist()) | set(mrna_dataset_idx.tolist())
     needed_idx |= set(shuf_mrna_dataset_idx.tolist()) | set(shuf_lnc_dataset_idx.tolist())
+    needed_idx |= set(same_lnc_dataset_idx.tolist()) | set(same_mrna_dataset_idx.tolist())
     needed_idx = sorted(needed_idx)
 
     print(f"  Caching token representations for {len(needed_idx)} transcripts...")
     token_cache_map: dict[int, torch.Tensor] = {}
     for idx in tqdm(needed_idx, desc="    Caching tokens", leave=False):
-        token_cache_map[idx] = get_tokens_single(model, dataset, idx, device, has_nonb2)
+        token_cache_map[idx] = get_tokens_single(model, dataset, idx, device, has_nonb2,
+                                                 patch_site=patch_site)
+
+    # verify the hook site / cache pair before any real patching
+    self_patch_sanity_check(
+        model, dataset, [int(i) for i in lnc_dataset_idx[:2]]
+        + [int(i) for i in mrna_dataset_idx[:2]],
+        device, has_nonb2, token_names, patch_site, layout)
+    print(f"  Self-patch sanity check passed (patch_site={patch_site})")
 
     n_tokens = len(token_names)
     all_positions = list(range(n_tokens))
@@ -464,7 +656,8 @@ def patch_fold(
                 model, dataset, lnc_idx, device, has_nonb2)
             vectors = mrna_tok[positions]  # (len(positions), d_proj)
             patched_logit_lnc, patched_prob_lnc = get_patched_logits(
-                model, dataset, lnc_idx, device, has_nonb2, positions, vectors)
+                model, dataset, lnc_idx, device, has_nonb2, positions, vectors,
+                patch_site=patch_site, layout=layout)
 
             iia_baseline_valid_lnc = baseline_prob_lnc <= 0.5
             iia_success_lnc = bool(iia_baseline_valid_lnc and patched_prob_lnc > 0.5)
@@ -488,7 +681,8 @@ def patch_fold(
                 model, dataset, mrna_idx, device, has_nonb2)
             vectors_r = lnc_tok[positions]
             patched_logit_mrna, patched_prob_mrna = get_patched_logits(
-                model, dataset, mrna_idx, device, has_nonb2, positions, vectors_r)
+                model, dataset, mrna_idx, device, has_nonb2, positions, vectors_r,
+                patch_site=patch_site, layout=layout)
 
             iia_baseline_valid_mrna = baseline_prob_mrna > 0.5
             iia_success_mrna = bool(iia_baseline_valid_mrna and patched_prob_mrna <= 0.5)
@@ -507,14 +701,25 @@ def patch_fold(
                 "fold": fold_idx,
             })
 
-    # ── Shuffled-null control: single-token scope only, random partner ─────
+    # control scopes (--null_scopes)
+    null_scope_list: list[tuple[str, str, str, list[int]]] = []  # (label, block, level, positions)
+    if "single" in null_scopes:
+        for i, sg in enumerate(token_names):
+            null_scope_list.append((sg, block_map.get(sg, "unknown"), "single", [i]))
+    if "block" in null_scopes:
+        for b in block_names:
+            if block_positions[b]:
+                null_scope_list.append((b, b, "block", block_positions[b]))
+    if "all" in null_scopes:
+        null_scope_list.append(("ALL", "ALL", "all", all_positions))
+
+    # ── Shuffled-null control: random partner (was: single-token scope only)
     if "shuffled" in patch_modes and len(shuf_mrna_dataset_idx) and len(shuf_lnc_dataset_idx):
-        print(f"  Shuffled-null control: {n_tokens} tokens × 2 directions × "
+        print(f"  Shuffled-null control: {len(null_scope_list)} scopes × 2 directions × "
               f"{len(shuf_mrna_dataset_idx)} draws...")
 
-        for i, sg in enumerate(tqdm(token_names, desc="    Shuffled token loop", leave=False)):
-            block_label = block_map.get(sg, "unknown")
-            positions = [i]
+        for sg, block_label, level, positions in tqdm(
+                null_scope_list, desc="    Shuffled scope loop", leave=False):
 
             for pair_i in range(len(shuf_mrna_dataset_idx)):
                 # lnc_to_mrna: baseline is a matched-pool lncRNA (reuse the
@@ -525,20 +730,22 @@ def patch_fold(
 
                 if rand_mrna_idx not in token_cache_map:
                     token_cache_map[rand_mrna_idx] = get_tokens_single(
-                        model, dataset, rand_mrna_idx, device, has_nonb2)
+                        model, dataset, rand_mrna_idx, device, has_nonb2,
+                        patch_site=patch_site)
                 rand_mrna_tok = token_cache_map[rand_mrna_idx]
 
                 baseline_logit_lnc, baseline_prob_lnc = get_logits_single(
                     model, dataset, lnc_idx, device, has_nonb2)
                 vectors = rand_mrna_tok[positions]
                 patched_logit_lnc, patched_prob_lnc = get_patched_logits(
-                    model, dataset, lnc_idx, device, has_nonb2, positions, vectors)
+                    model, dataset, lnc_idx, device, has_nonb2, positions, vectors,
+                    patch_site=patch_site, layout=layout)
 
                 iia_baseline_valid_lnc = baseline_prob_lnc <= 0.5
                 iia_success_lnc = bool(iia_baseline_valid_lnc and patched_prob_lnc > 0.5)
 
                 rows.append({
-                    "patch_mode": "shuffled", "patch_scope": sg,
+                    "patch_mode": "shuffled", "patch_scope": sg, "scope_level": level,
                     "block": block_label, "direction": "lnc_to_mrna",
                     "pair_i": pair_i,
                     "lnc_dataset_idx": int(lnc_idx),
@@ -559,20 +766,22 @@ def patch_fold(
 
                 if rand_lnc_idx not in token_cache_map:
                     token_cache_map[rand_lnc_idx] = get_tokens_single(
-                        model, dataset, rand_lnc_idx, device, has_nonb2)
+                        model, dataset, rand_lnc_idx, device, has_nonb2,
+                        patch_site=patch_site)
                 rand_lnc_tok = token_cache_map[rand_lnc_idx]
 
                 baseline_logit_mrna, baseline_prob_mrna = get_logits_single(
                     model, dataset, mrna_idx, device, has_nonb2)
                 vectors_r = rand_lnc_tok[positions]
                 patched_logit_mrna, patched_prob_mrna = get_patched_logits(
-                    model, dataset, mrna_idx, device, has_nonb2, positions, vectors_r)
+                    model, dataset, mrna_idx, device, has_nonb2, positions, vectors_r,
+                    patch_site=patch_site, layout=layout)
 
                 iia_baseline_valid_mrna = baseline_prob_mrna > 0.5
                 iia_success_mrna = bool(iia_baseline_valid_mrna and patched_prob_mrna <= 0.5)
 
                 rows.append({
-                    "patch_mode": "shuffled", "patch_scope": sg,
+                    "patch_mode": "shuffled", "patch_scope": sg, "scope_level": level,
                     "block": block_label, "direction": "mrna_to_lnc",
                     "pair_i": pair_i,
                     "lnc_dataset_idx": int(rand_lnc_idx),
@@ -586,7 +795,80 @@ def patch_fold(
                     "fold": fold_idx,
                 })
 
-    return pd.DataFrame(rows)
+    # ── same-class and norm-matched-noise controls ──────────────────────────
+    # sameclass: iia_success is the spurious flip rate; direction keeps the
+    #   baseline class. noise: random vectors with the shuffled partner's
+    #   norms (same baselines -> paired with the shuffled rows).
+    def _run_control(mode: str):
+        if mode == "sameclass":
+            part_l, part_m = same_lnc_dataset_idx, same_mrna_dataset_idx
+        else:
+            part_l, part_m = shuf_mrna_dataset_idx, shuf_lnc_dataset_idx
+        n_draw = min(len(part_l), len(part_m))
+        if n_draw == 0:
+            warnings.warn(f"No partners available for '{mode}' control — skipped.")
+            return
+        gen = torch.Generator().manual_seed(9242 + fold_idx)
+        print(f"  {mode} control: {len(null_scope_list)} scopes × 2 directions × "
+              f"{n_draw} draws...")
+        for label, block_label, level, positions in tqdm(
+                null_scope_list, desc=f"    {mode} scope loop", leave=False):
+            for pair_i in range(n_draw):
+                for direction in ("lnc_to_mrna", "mrna_to_lnc"):
+                    if direction == "lnc_to_mrna":
+                        base_idx, part_idx = lnc_dataset_idx[pair_i % n_actual], part_l[pair_i]
+                    else:
+                        base_idx, part_idx = mrna_dataset_idx[pair_i % n_actual], part_m[pair_i]
+                    if part_idx not in token_cache_map:
+                        token_cache_map[part_idx] = get_tokens_single(
+                            model, dataset, part_idx, device, has_nonb2,
+                            patch_site=patch_site)
+                    vectors = token_cache_map[part_idx][positions]
+                    if mode == "noise":
+                        vectors = make_noise_vectors(vectors, gen)
+
+                    bl, bp = get_logits_single(model, dataset, base_idx, device, has_nonb2)
+                    pl, pp = get_patched_logits(
+                        model, dataset, base_idx, device, has_nonb2, positions,
+                        vectors, patch_site=patch_site, layout=layout)
+                    if direction == "lnc_to_mrna":
+                        valid = bp <= 0.5
+                        success = bool(valid and pp > 0.5)
+                    else:
+                        valid = bp > 0.5
+                        success = bool(valid and pp <= 0.5)
+                    rows.append({
+                        "patch_mode": mode, "patch_scope": label,
+                        "scope_level": level, "block": block_label,
+                        "direction": direction, "pair_i": pair_i,
+                        "lnc_dataset_idx": int(base_idx if direction == "lnc_to_mrna" else part_idx),
+                        "mrna_dataset_idx": int(part_idx if direction == "lnc_to_mrna" else base_idx),
+                        "partner_dataset_idx": int(part_idx),
+                        "baseline_logit": bl, "patched_logit": pl,
+                        "delta_logit": pl - bl,
+                        "baseline_prob": bp, "patched_prob": pp,
+                        "delta_prob": pp - bp,
+                        "iia_baseline_valid": bool(valid),
+                        "iia_success": success,
+                        "fold": fold_idx,
+                    })
+
+    for _mode in ("sameclass", "noise"):
+        if _mode in patch_modes:
+            _run_control(_mode)
+
+    df = pd.DataFrame(rows)
+    df["patch_site"] = patch_site
+    # scope level and patch-source index on every row
+    if "scope_level" not in df.columns:
+        df["scope_level"] = np.nan
+    df["scope_level"] = df["scope_level"].fillna(df["patch_mode"])
+    if "partner_dataset_idx" not in df.columns:
+        df["partner_dataset_idx"] = np.nan
+    df["partner_dataset_idx"] = df["partner_dataset_idx"].fillna(
+        df["mrna_dataset_idx"].where(df["direction"] == "lnc_to_mrna",
+                                     df["lnc_dataset_idx"])).astype(int)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +935,11 @@ def build_summary(all_folds_df: pd.DataFrame) -> pd.DataFrame:
             on=["patch_mode", "patch_scope"], how="left",
         )
 
+    # self-describing summary: downstream scripts refuse mixed patch sites
+    if "patch_site" in all_folds_df.columns:
+        sites = all_folds_df["patch_site"].dropna().unique()
+        agg["patch_site"] = sites[0] if len(sites) == 1 else "mixed"
+
     return agg
 
 
@@ -686,14 +973,31 @@ def main():
     parser.add_argument("--batch_size",      type=int,   default=None)
     parser.add_argument("--patch_modes",     type=str,   default="single,block,all",
                         help="Comma-separated subset of "
-                             "{single,block,all,shuffled} (default: single,block,all)")
+                             "{single,block,all,shuffled,sameclass,noise} "
+                             "(default: single,block,all)")
     parser.add_argument("--n_shuffled",      type=int,   default=None,
                         help="Draws per token for the shuffled-null control "
                              "(default: same as --n_pairs)")
+    parser.add_argument("--patch_site",      choices=PATCH_SITES,
+                        default=DEFAULT_PATCH_SITE,
+                        help="Where interventions are applied. 'projector' "
+                             "(default) patches model.projectors[block] "
+                             "outputs, reaching both the cross-attention/z "
+                             "path and the per-block summary path. "
+                             "'token_norm' is the LEGACY single-path hook, "
+                             "kept for comparison only.")
+    parser.add_argument("--null_scopes",     type=str,   default="single,block,all",
+                        help="Scopes covered by the control modes (shuffled, "
+                             "sameclass, noise), comma-separated subset of "
+                             "{single,block,all} (default: all three)")
     args = parser.parse_args()
 
+    null_scopes = [m.strip() for m in args.null_scopes.split(",") if m.strip()]
+    if set(null_scopes) - {"single", "block", "all"}:
+        raise ValueError(f"Unknown --null_scopes entries: "
+                         f"{set(null_scopes) - {'single', 'block', 'all'}}")
     patch_modes = [m.strip() for m in args.patch_modes.split(",") if m.strip()]
-    valid_modes = {"single", "block", "all", "shuffled"}
+    valid_modes = {"single", "block", "all", "shuffled", "sameclass", "noise"}
     unknown = set(patch_modes) - valid_modes
     if unknown:
         raise ValueError(f"Unknown --patch_modes entries: {unknown}. "
@@ -706,7 +1010,7 @@ def main():
     device     = torch.device(args.device)
 
     print("=" * 70)
-    print("BetaVAESubgroup — Multi-Scope Token Activation Patching ")
+    print("BetaVAESubgroup — Multi-Scope Token Activation Patching")
     print("=" * 70)
     print(f"Experiment  : {exp_dir}")
     print(f"Config      : {args.config}")
@@ -714,6 +1018,7 @@ def main():
     print(f"Device      : {args.device}")
     print(f"Pairs/fold  : {args.n_pairs}")
     print(f"Patch modes : {patch_modes}")
+    print(f"Patch site  : {args.patch_site}")
     print(f"Min conf    : {args.min_confidence}")
     print(f"Max Δlen    : {args.max_length_diff:.0%}")
     print(f"Max ΔGC     : {args.max_gc_diff}")
@@ -779,6 +1084,16 @@ def main():
         if save_path.exists():
             print(f"   Already done — loading from {save_path}")
             df = pd.read_csv(save_path)
+            # never mix patch sites across resumed folds
+            if ("patch_site" not in df.columns
+                    or set(df["patch_site"].unique()) != {args.patch_site}):
+                found = (sorted(df["patch_site"].unique())
+                         if "patch_site" in df.columns
+                         else "none (legacy token_norm output)")
+                raise RuntimeError(
+                    f"{save_path} was produced with patch_site={found}, but "
+                    f"this run uses patch_site='{args.patch_site}'. Use a "
+                    f"fresh --output_dir (or delete the stale CSVs).")
             all_fold_dfs.append(df)
             continue
 
@@ -815,6 +1130,8 @@ def main():
             block_names     = block_names,
             patch_modes     = patch_modes,
             n_shuffled      = args.n_shuffled,
+            patch_site      = args.patch_site,
+            null_scopes     = tuple(null_scopes),
         )
 
         if fold_df.empty:

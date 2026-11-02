@@ -2,8 +2,9 @@
 """
 plot_patching_symmetry.py
 
-Reads a patching summary CSV (from patch_tokens.py or, filtered to
-patch_mode == "single", from patch_tokens_v2.py) and produces:
+Reads a patching summary CSV (from patch_tokens.py; the original
+single-token-only summary is also accepted, and the multi-mode summary is
+filtered to patch_mode == "single") and produces:
   1. patching_symmetry_bar_<release>.{png,pdf} — horizontal, log-scale
      bar chart ranking subgroups by symmetry score (unchanged from before).
   2. symmetry_vs_iia_<release>.{png,pdf} — two-panel comparison, shared
@@ -21,6 +22,7 @@ python plot_patching_symmetry.py \
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -46,22 +48,35 @@ DISPLAY_NAMES = {
 }
 
 
+def _warn_if_not_projector_site(df: pd.DataFrame, source: str) -> None:
+    """Warn (non-fatal) unless the input is projector-site output; token_norm
+    or legacy files under-state subgroup reliance."""
+    sites = (set(df["patch_site"].dropna().unique())
+             if "patch_site" in df.columns else set())
+    if sites != {"projector"}:
+        print(f"WARNING: {source} is not projector-site patching output "
+              f"(patch_site={sorted(sites) or 'missing/legacy'}). Numbers "
+              f"come from the single-path token_norm hook; do not report "
+              f"them as final.", file=sys.stderr)
+
+
 def load_symmetry(patching_csv: Path) -> pd.DataFrame:
     """
-    Load a patching summary CSV (from patch_tokens.py or patch_tokens_v2.py)
+    Load a patching summary CSV (from patch_tokens.py)
     and reduce to one row per subgroup with symmetry_score and iia_overall
     (direction-agnostic — both are already collapsed across direction in
     the source CSV; dedupe on lnc_to_mrna row where direction is still
     present per-row).
 
-    patch_tokens_v2.py's summary contains multiple patch_mode/patch_scope
+    patch_tokens.py's summary contains multiple patch_mode/patch_scope
     rows (single/block/all/shuffled) per subgroup — filtered here to
-    patch_mode == "single" to match patch_tokens.py's single-token-only
+    patch_mode == "single" to match the original single-token-only
     scope. Block/all-scope data is used separately for the sufficiency
     curve, not this plot.
     """
     df = pd.read_csv(patching_csv)
     df.columns = df.columns.str.strip().str.lower()
+    _warn_if_not_projector_site(df, str(patching_csv))
 
     if "patch_mode" in df.columns:
         df = df[df["patch_mode"] == "single"].copy()
@@ -271,8 +286,8 @@ def make_sufficiency_curve_plot(df: pd.DataFrame, release: str, output_dir: Path
     single/block/all section labels out of visual alignment with their bars.
     """
     if df.empty or "iia_overall" not in df.columns:
-        print("  No sufficiency-curve data (need a v2-format CSV with "
-              "block/all scopes and iia_overall) — skipping")
+        print("  No sufficiency-curve data (need a patch_tokens.py-format CSV "
+              "with block/all scopes and iia_overall) — skipping")
         return
 
     single_df = df[df["patch_mode"] == "single"].sort_values(

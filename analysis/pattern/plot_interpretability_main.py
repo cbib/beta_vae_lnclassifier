@@ -36,7 +36,7 @@ python analysis/pattern/plot_interpretability_main.py \\
     --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation_analysis/all_folds_ablation.csv \\
     --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv \\
     --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_residual.csv \\
-    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/patching_v2/all_folds_patching.csv \\
+    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \\
     --greedy_all_folds     gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching/joint_patching_greedy_all_folds.csv \\
     --output_dir           gencode_v49_experiments/benchmark_comparison \\
     --release              v49
@@ -55,10 +55,12 @@ patching_csv          : either patching_summary.csv (subgroup,
 greedy_all_folds       : step, added_subgroup, current_set, set_size,
                          iia_joint, symmetry_joint, iia_additive_expected,
                          delta_vs_additive, fold  (joint_patching_search.py
-                         output)
+                         output). If the *_heldout columns are present
+                         (iia_joint_heldout, iia_additive_expected_heldout,
+                         iia_logit_additive_heldout), Panel C plots those.
 
 All CSVs must share the same subgroup key convention (internal TE_* keys).
-Pass --display_names to remap TE_* → REP_* in figure labels only.
+Figure labels always render as REP_* (e.g. TE_CORE -> REP_CORE).
 """
 
 import argparse
@@ -184,6 +186,13 @@ def normalize_patching_summary(raw_df: pd.DataFrame) -> pd.DataFrame:
     duplicated here so this plotting script has no cross-script import
     dependency.
 
+    NOTE: deliberately does NOT call norm_cols() on this file — norm_cols's
+    "rename first column to subgroup if none found" fallback is meant for
+    the Fréchet/ablation/pattern CSVs, which genuinely have a subgroup
+    identifier as their first column. This file's real key is patch_scope
+    (single-mode) or subgroup (pre-aggregated); blindly renaming column 0
+    here can create a DUPLICATE 'subgroup' column when the frame already
+    has one, which breaks groupby with "Grouper not 1-dimensional".
     """
     df = raw_df.copy()
     df.columns = df.columns.str.strip().str.lower()
@@ -240,6 +249,18 @@ def normalize_patching_summary(raw_df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _warn_if_not_projector_site(df: pd.DataFrame, source: str) -> None:
+    """Warn (non-fatal) unless the input is projector-site output; token_norm
+    or legacy files under-state subgroup reliance."""
+    sites = (set(df["patch_site"].dropna().unique())
+             if "patch_site" in df.columns else set())
+    if sites != {"projector"}:
+        print(f"WARNING: {source} is not projector-site patching output "
+              f"(patch_site={sorted(sites) or 'missing/legacy'}). Numbers "
+              f"come from the single-path token_norm hook; do not report "
+              f"them as final.", file=sys.stderr)
+
+
 def load_csvs(frechet_path, ablation_path, raw_path, residual_path, patching_path):
     fd  = norm_cols(pd.read_csv(frechet_path))
     abl = norm_cols(pd.read_csv(ablation_path))
@@ -256,7 +277,9 @@ def load_csvs(frechet_path, ablation_path, raw_path, residual_path, patching_pat
               .merge(raw, on="subgroup", how="inner")
               .merge(res, on="subgroup", how="inner"))
 
-    pat = normalize_patching_summary(pd.read_csv(patching_path))
+    pat_raw = pd.read_csv(patching_path)
+    _warn_if_not_projector_site(pat_raw, str(patching_path))
+    pat = normalize_patching_summary(pat_raw)
     merged = merged.merge(pat, on="subgroup", how="left")
     for col in ["symmetry_score", "iia_overall"]:
         if col in merged.columns:
@@ -385,25 +408,50 @@ def plot_panel_b(ax, patching_df):
 
 # ── Panel C: cross-fold greedy synergy ───────────────────────────────────────
 
+def _selection_note(greedy_all: pd.DataFrame, steps=(1, 2)) -> str:
+    """Subgroup added at each of `steps` and the number of folds choosing it."""
+    parts, n_folds = [], greedy_all["fold"].nunique()
+    for st in steps:
+        sub = greedy_all[greedy_all["step"] == st]
+        if sub.empty:
+            continue
+        counts = sub["added_subgroup"].value_counts()
+        name, k = counts.index[0], int(counts.iloc[0])
+        parts.append(f"{display_name(name)} ({k}/{n_folds} folds)")
+    return "selected 1st/2nd:\n" + " , ".join(parts)
+
+
 def plot_panel_c(ax, greedy_all: pd.DataFrame):
-    summary = (
-        greedy_all.groupby("step")
-        .agg(mean_iia_joint=("iia_joint", "mean"),
-             std_iia_joint=("iia_joint", "std"),
-             mean_iia_additive=("iia_additive_expected", "mean"),
-             std_iia_additive=("iia_additive_expected", "std"))
-        .reset_index()
-    )
+    # held-out columns when present, plus the logit-additive null
+    heldout = "iia_joint_heldout" in greedy_all.columns
+    joint_col = "iia_joint_heldout" if heldout else "iia_joint"
+    indep_col = "iia_additive_expected_heldout" if heldout else "iia_additive_expected"
+    spec = dict(mean_iia_joint=(joint_col, "mean"), std_iia_joint=(joint_col, "std"),
+                mean_iia_additive=(indep_col, "mean"),
+                std_iia_additive=(indep_col, "std"))
+    has_logit = "iia_logit_additive_heldout" in greedy_all.columns
+    if has_logit:
+        spec.update(mean_iia_logit=("iia_logit_additive_heldout", "mean"),
+                    std_iia_logit=("iia_logit_additive_heldout", "std"))
+    summary = greedy_all.groupby("step").agg(**spec).reset_index()
     steps = summary["step"].values
 
     ax.errorbar(steps, summary["mean_iia_joint"], yerr=summary["std_iia_joint"],
                color="#a34c32", marker="o", markersize=4.5, linewidth=1.6,
-               capsize=2.5, label="Joint IIA (searched)", zorder=3)
+               capsize=2.5,
+               label="Joint IIA (held-out pairs)" if heldout else "Joint IIA (searched)",
+               zorder=3)
     ax.errorbar(steps, summary["mean_iia_additive"], yerr=summary["std_iia_additive"],
                color="#8a8478", marker="s", markersize=4.5, linewidth=1.2,
-               linestyle="--", capsize=2.5, label="Additive null", zorder=2)
-    ax.fill_between(steps, summary["mean_iia_joint"], summary["mean_iia_additive"],
-                    where=(summary["mean_iia_joint"] >= summary["mean_iia_additive"]),
+               linestyle="--", capsize=2.5, label="Independence null", zorder=2)
+    ref_col = "mean_iia_additive"
+    if has_logit:
+        ax.errorbar(steps, summary["mean_iia_logit"], yerr=summary["std_iia_logit"],
+                   color="#4a6fa5", marker="^", markersize=4.5, linewidth=1.2,
+                   linestyle=":", capsize=2.5, label="Logit-additive null", zorder=2)
+        ref_col = "mean_iia_logit"
+    ax.fill_between(steps, summary["mean_iia_joint"], summary[ref_col],
+                    where=(summary["mean_iia_joint"] >= summary[ref_col]),
                     color="#a34c32", alpha=0.12, zorder=1)
 
     ax.set_xlabel("Subgroup set size", fontsize=9)
@@ -414,18 +462,18 @@ def plot_panel_c(ax, greedy_all: pd.DataFrame):
     ax.legend(fontsize=7, frameon=True, loc="upper left")
 
     last = summary.iloc[-1]
-    gap = last["mean_iia_joint"] - last["mean_iia_additive"]
-    ax.annotate(f"+{gap:.3f}",
-               xy=(last["step"], (last["mean_iia_joint"] + last["mean_iia_additive"]) / 2),
-               xytext=(last["step"] + 0.15, (last["mean_iia_joint"] + last["mean_iia_additive"]) / 2),
+    gap = last["mean_iia_joint"] - last[ref_col]
+    mid = (last["mean_iia_joint"] + last[ref_col]) / 2
+    ax.annotate(f"{gap:+.3f}", xy=(last["step"], mid),
+               xytext=(last["step"] + 0.15, mid),
                fontsize=7.5, color="#a34c32", fontweight="bold", va="center")
-    anchor_label = " + ".join(display_name(sg) for sg in ("SS_BINNED", "TE_CORE"))
-    ax.annotate(f"{anchor_label}\nselected 1st/2nd, every fold",
-               xy=(2, summary.loc[summary["step"] == 2, "mean_iia_joint"].values[0]),
-               xytext=(3.1, 0.335),
-               fontsize=6.5, color="#a34c32", ha="left", va="top",
-               arrowprops=dict(arrowstyle="-", color="#a34c32", lw=0.5,
-                                connectionstyle="arc3,rad=0.2"))
+    if (greedy_all["step"] == 2).any():
+        y2 = summary.loc[summary["step"] == 2, "mean_iia_joint"].values[0]
+        ax.annotate(_selection_note(greedy_all),
+                   xy=(2, y2), xytext=(steps.max() * 0.45, summary["mean_iia_joint"].max() * 0.55),
+                   fontsize=6.5, color="#a34c32", ha="left", va="top",
+                   arrowprops=dict(arrowstyle="-", color="#a34c32", lw=0.5,
+                                    connectionstyle="arc3,rad=0.2"))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -458,6 +506,7 @@ def main():
         args.patching_csv,
     )
     greedy_all = pd.read_csv(args.greedy_all_folds)
+    _warn_if_not_projector_site(greedy_all, args.greedy_all_folds)
 
     print(f"  Subgroups: {sorted(df['subgroup'].tolist())}")
     print(f"  Greedy search: {greedy_all['fold'].nunique()} folds, "
