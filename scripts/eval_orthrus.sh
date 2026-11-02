@@ -12,7 +12,7 @@ module load nvidia/cuda/12.1                # Load CUDA module (adjust version a
 eval "$(conda shell.bash hook)"
 conda activate orthrus
 
-cd /mnt/cbib/LNClassifier/beta_vae_lnclassifier
+cd ${DATA_ROOT}
 
 python analysis/benchmark/evaluate_orthrus.py --model_name Orthrus/models/orthrus-4-track --train_lnc_fasta data/split_gencode_49/lnc_trainval.fa --train_pc_fasta data/split_gencode_49/pc_trainval.fa --test_lnc_fasta data/split_gencode_49/lnc_test.fa --test_pc_fasta data/split_gencode_49/pc_test.fa --output_dir gencode_v49_experiments/orthrus_evaluation/ --batch_size 16 --max_length 15000 --save_unpooled
 

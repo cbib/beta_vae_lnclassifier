@@ -37,7 +37,7 @@
 #     [--skip_cpat] [--skip_cpc2] [--skip_lncdc] [--skip_orthrus] [--skip_rnasamba]
 # =============================================================================
 
-cd /mnt/cbib/LNClassifier/beta_vae_lnclassifier
+cd ${DATA_ROOT}
 set -eo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────

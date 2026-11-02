@@ -12,7 +12,7 @@ module load nvidia/cuda/12.1                # Load CUDA module (adjust version a
 eval "$(conda shell.bash hook)"
 conda activate beta_lncrna
 
-cd /mnt/cbib/LNClassifier/beta_vae_lnclassifier
+cd ${DATA_ROOT}
 
 python src/main_subgroup.py \
     --config configs/beta_vae_subgroup_base_g49.json \

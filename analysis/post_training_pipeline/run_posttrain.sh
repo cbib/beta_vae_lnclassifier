@@ -44,7 +44,7 @@
 # =============================================================================
 
 set -uo pipefail
-cd /mnt/cbib/LNClassifier/beta_vae_lnclassifier
+cd ${DATA_ROOT}
 
 SCRIPT_DIR="analysis/benchmark"
 HARD_DIR="analysis/benchmark/hard_for_all"
