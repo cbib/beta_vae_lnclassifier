@@ -44,6 +44,41 @@ _SF_BIN_PATTERN = re.compile(
     r"^n_(paired|competition|z_lt_minus1|z_lt_minus2)_bin\d+$"
 )
 
+_KINDS = ("paired", "competition", "z_lt_minus1", "z_lt_minus2")
+
+
+def fill_prop_from_counts(df: pd.DataFrame) -> pd.DataFrame:
+    """Rows from the later ScanFold2 run carry n_<kind>_bin1..10 counts and NaN prop_<kind>_bin1..10.
+    prop_<kind>_binK = n_<kind>_binK / sum_K n_<kind>_binK (share of the transcript's <kind> windows in bin K;
+    0 when it has none). Must run BEFORE the n_* columns are dropped."""
+    for k in _KINDS:
+        pc = [f"prop_{k}_bin{b}" for b in range(1, 11)]
+        nc = [f"n_{k}_bin{b}" for b in range(1, 11)]
+        if not (set(pc) <= set(df.columns) and set(nc) <= set(df.columns)):
+            print(f"  [{k}] prop or n bin columns missing; not filled")
+            continue
+        n = df[nc].astype(float)
+        tot = n.sum(axis=1, min_count=1)
+        derived = n.div(tot.where(tot > 0), axis=0).fillna(0.0).where(n.notna().all(axis=1))
+        derived.columns = pc
+        has_p = df[pc].notna().all(axis=1)
+        has_n = derived.notna().all(axis=1)
+        # agreement of the two runs on transcripts that have both formats
+        a = df.loc[has_p, ["transcript_id"] + pc].groupby("transcript_id").first()
+        b = derived.loc[has_n].assign(transcript_id=df.loc[has_n, "transcript_id"].values).groupby("transcript_id").first()
+        common = a.index.intersection(b.index)
+        agree = ""
+        if len(common):
+            x, y = a.loc[common].values.ravel(), b.loc[common].values.ravel()
+            agree = (f"; agreement between runs on {len(common):,} shared ids: "
+                     f"r = {np.corrcoef(x, y)[0, 1]:.3f}, mean |diff| = {np.abs(x - y).mean():.4f}")
+        need = ~has_p & has_n
+        df.loc[need, pc] = derived.loc[need].values
+        left = int(df[pc].isna().all(axis=1).sum())
+        print(f"  [{k}] filled {int(need.sum()):,} rows from counts; rows still without bins: {left:,}{agree}")
+    return df
+
+
 # Columns to drop from rG4 (metadata)
 _RG4_DROP_EXACT = {"transcript_length"}
 
@@ -62,6 +97,9 @@ def load_scanfold(path: str | Path) -> pd.DataFrame:
 
     # Normalise transcript_id
     df["transcript_id"] = normalise_id(df["transcript_id"])
+
+    # Fill prop_*_bin* from n_*_bin* where the run only wrote counts (before n_* is dropped)
+    df = fill_prop_from_counts(df)
 
     # Drop excluded columns
     drop_cols = set()
