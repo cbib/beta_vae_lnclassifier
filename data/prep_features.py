@@ -132,6 +132,7 @@ def _preprocess_nonb2(df: pd.DataFrame) -> pd.DataFrame:
 
     1. Strip transcript_id from index (pipe-separated + version suffix)
     2. Drop excluded columns (metadata, length-dependent absolute counts)
+       and duplicate transcript rows (keep first); raise on NaN prop_*_bin
     3. Impute rg4_peak_rel_position sentinel (-1.0) → 0.5
     4. Cast has_peak to int8
 
@@ -149,6 +150,21 @@ def _preprocess_nonb2(df: pd.DataFrame) -> pd.DataFrame:
         print(f"  Dropping {len(cols_to_drop)} excluded NonB2 columns "
               f"(length-dependent / metadata)")
         df = df.drop(columns=cols_to_drop)
+
+    # ── One row per transcript (keep first) ──────────────────────────────────
+    dup = df.index.duplicated(keep="first")
+    if dup.any():
+        print(f"  Dropping {dup.sum():,} duplicate transcript rows (keep first)")
+        df = df[~dup]
+
+    # ── Bin proportions must be present; _clean_df would zero-fill NaN ───────
+    bin_cols = [c for c in df.columns if re.match(r"^prop_.*_bin\d+$", c)]
+    n_nan = int(df[bin_cols].isna().any(axis=1).sum()) if bin_cols else 0
+    if n_nan:
+        raise ValueError(
+            f"{n_nan:,} NonB2 rows have NaN in prop_*_bin columns; "
+            "rebuild the CSV with data/merge_nonb2.py (fills them from n_*_bin)."
+        )
 
     # ── Sentinel imputation: rg4_peak_rel_position ────────────────────────────
     if "rg4_peak_rel_position" in df.columns:
