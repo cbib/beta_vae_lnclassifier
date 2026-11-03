@@ -32,17 +32,17 @@
     "pc_fasta": "data/split_gencode_47_genegrouped/pc_trainval.fa",
     "lnc_test_fasta": "data/split_gencode_47_genegrouped/lnc_test.fa",
     "pc_test_fasta": "data/split_gencode_47_genegrouped/pc_test.fa",
-    "te_genomic_csv": "data/genegrouped_features/g47_te_features_clean.csv",
+    "te_genomic_csv": "data/genegrouped_features_binfix/g47_te_features_clean.csv",
     "te_processed_csv": "data/processed_features/g47_te_features_clean.csv",
-    "te_scaler_bank_path": "data/genegrouped_features/g47_te_scaler_bank.pkl",
-    "nonb_genomic_csv": "data/genegrouped_features/g47_nonb_features_clean.csv",
+    "te_scaler_bank_path": "data/genegrouped_features_binfix/g47_te_scaler_bank.pkl",
+    "nonb_genomic_csv": "data/genegrouped_features_binfix/g47_nonb_features_clean.csv",
     "nonb_processed_csv": "data/processed_features/g47_nonb_features_clean.csv",
-    "nonb_scaler_bank_path": "data/genegrouped_features/g47_nonb_scaler_bank.pkl",
-    "nonb2_csv": "data/genegrouped_features/g47_nonb2_features_clean.csv",
-    "nonb2_scaler_bank_path": "data/genegrouped_features/g47_nonb2_scaler_bank.pkl"
+    "nonb_scaler_bank_path": "data/genegrouped_features_binfix/g47_nonb_scaler_bank.pkl",
+    "nonb2_csv": "data/genegrouped_features_binfix/g47_nonb2_features_clean.csv",
+    "nonb2_scaler_bank_path": "data/genegrouped_features_binfix/g47_nonb2_scaler_bank.pkl"
   },
   "training": {
-    "batch_size": 256,
+    "batch_size": 512,
     "num_epochs": 30,
     "learning_rate": 0.0001,
     "weight_decay": 0.001,
@@ -88,6 +88,6 @@
     "min_lr": 1e-06
   },
   "output": {
-    "experiment_name": "gencode_v47_experiments_genegrouped/beta_vae_subgroup_base_g47_genegrouped"
+    "experiment_name": "gencode_v47_experiments_genegrouped/beta_vae_subgroup_base_g47_genegrouped_binfix"
   }
 }
