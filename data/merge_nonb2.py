@@ -4,7 +4,7 @@
 merge_nonb2.py
 
 Merges ScanFold2 and rG4detector CSVs into a single NonB2 feature file
-ready for prepare_features.py.
+ready for prep_features.py.
 
 Steps
 -----
@@ -17,7 +17,7 @@ Steps
 4. Inner join on normalised transcript_id
 5. Write merged CSV with transcript_id as first column
 
-The output is used as --nonb2_csv in prepare_features.py.
+The output is used as --nonb2_csv in prep_features.py.
 
 Usage
 -----

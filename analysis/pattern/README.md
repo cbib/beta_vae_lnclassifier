@@ -4,12 +4,16 @@ Three-layer interpretability analysis for the BetaVAESubgroup architecture,
 proof-tested on GENCODE v47/v49 with the 20-token registry (NonB / REP /
 NonB2 blocks).
 
+`bash scripts/layers.sh <experiment_dir> --config configs/<config>.json` runs the
+whole pipeline with resumable stages (see its header for the stage list). The
+steps below are the same scripts run by hand.
+
 ---
 
 ## Pipeline overview
 
 ```
-Training (main_subgroup.py / main_subgroup_debug.py)
+Training (main_subgroup.py)
     ↓
 [1] extract_representations.py
     • Load trained fold checkpoints
@@ -85,8 +89,7 @@ python analysis/pattern/extract_representations.py \
 
 ```bash
 python analysis/pattern/analyze_mstar.py \
-    --features_dir data/processed_features_genomic \
-    --release      v49 \
+    --config       configs/beta_vae_subgroup_base_g49.json \
     --output_dir   gencode_v49_experiments/mstar_analysis \
     --pattern_raw_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv
 ```
@@ -227,7 +230,7 @@ curve. For a cross-release comparison, add a second release's summary:
 ```bash
 python analysis/pattern/plot_patching_symmetry.py \
     --patching_csv  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
-    --patching_csv2 gencode_v47_experiments/beta_vae_subgroup_base_g47_new/patching/patching_summary.csv \
+    --patching_csv2 gencode_v47_experiments/beta_vae_subgroup_base_g47/patching/patching_summary.csv \
     --release       v49 --release2 v47 \
     --output_dir    gencode_v49_experiments/benchmark_comparison \
     --display_names
@@ -315,7 +318,7 @@ representations/
   fold_N_repr.npz            z, tokens, labels, token_names, block_names, ...
 
 mstar_analysis/
-  frechet_results.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction
+  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction
   frechet_vs_pattern.png     (only if --pattern_raw_csv given)
 
 latent_probing/

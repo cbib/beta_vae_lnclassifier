@@ -31,11 +31,11 @@ for sequence overlap, not a sequence-level check.
 Usage
 -----
 python analysis/benchmark/unseen_subset.py \\
-    --test_lnc_fasta data/split_gencode_49_genegrouped/lnc_test.fa \\
-    --test_pc_fasta  data/split_gencode_49_genegrouped/pc_test.fa \\
+    --test_lnc_fasta data/split_gencode_49/lnc_test.fa \\
+    --test_pc_fasta  data/split_gencode_49/pc_test.fa \\
     --test_release 49 --cutoffs 34 43 46 \\
     --cache_dir gencode_release_index \\
-    --output_dir gencode_v49_experiments_genegrouped/unseen_subset
+    --output_dir gencode_v49_experiments/unseen_subset
 """
 
 from __future__ import annotations

@@ -29,8 +29,8 @@ suffix=""
 for l in 1 2 3; do has "$l" && suffix+="$l"; done
 [[ "$suffix" == "123" ]] && suffix="" || suffix="_L$suffix"
 
-EXP47=gencode_v47_experiments_genegrouped/beta_vae_subgroup_base_g47_genegrouped_binfix
-EXP49=gencode_v49_experiments_genegrouped/beta_vae_subgroup_base_g49_genegrouped_binfix
+EXP47=gencode_v47_experiments/beta_vae_subgroup_base_g47
+EXP49=gencode_v49_experiments/beta_vae_subgroup_base_g49
 
 # Selected layers against the released β-LNC outputs of one experiment.
 #   compare <tag> <experiment_dir> <config>
@@ -66,6 +66,6 @@ compare() {
 
 echo "layers: ${want}  (reports: analysis/triframe/reports/*${suffix})"
 rc=0
-compare g47 "$EXP47" configs/beta_vae_subgroup_g47_genegrouped.json || rc=1
-compare g49 "$EXP49" configs/beta_vae_subgroup_g49_genegrouped.json || rc=1
+compare g47 "$EXP47" configs/beta_vae_subgroup_base_g47.json || rc=1
+compare g49 "$EXP49" configs/beta_vae_subgroup_base_g49.json || rc=1
 exit $rc

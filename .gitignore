@@ -29,8 +29,6 @@ data/*/
 # Experiments (for results, go to Zenodo)
 gencode_v47_experiments/
 gencode_v49_experiments/
-gencode_v47_experiments_genegrouped/
-gencode_v49_experiments_genegrouped/
 logs*/*
 lncrnapy/
 OUT/
