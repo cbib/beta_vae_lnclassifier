@@ -35,7 +35,7 @@
 #     [--min_set_size 5] \
 #     [--orthrus_env  ${HOME}/.conda/envs/orthrus] \
 #     [--rnasamba_sif rnasamba.sif] \
-#     [--max_length   10000]
+#     [--max_length   15000]
 #
 # Notes
 # -----
