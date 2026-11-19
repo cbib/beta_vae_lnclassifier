@@ -393,6 +393,184 @@ def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Paired gene-clustered bootstrap of the macro-F1 difference
+# ---------------------------------------------------------------------------
+
+def _gene_confusion(y_true, y_pred, codes, n_genes):
+    """Per-gene [tn, fp, fn, tp] counts (class 1 = positive)."""
+    k = y_true * 2 + y_pred
+    return np.bincount(codes * 4 + k, minlength=n_genes * 4).reshape(n_genes, 4)
+
+
+def _macro_f1_counts(c):
+    """Macro-F1 from [..., 4] confusion counts; 0 where undefined
+    (sklearn zero_division=0)."""
+    tn, fp, fn, tp = c[..., 0], c[..., 1], c[..., 2], c[..., 3]
+    d1, d0 = 2 * tp + fp + fn, 2 * tn + fn + fp
+    f1 = np.where(d1 > 0, 2 * tp / np.maximum(d1, 1), 0.0)
+    f0 = np.where(d0 > 0, 2 * tn / np.maximum(d0, 1), 0.0)
+    return (f1 + f0) / 2
+
+
+def paired_f1_bootstrap(y_true, pred_a, pred_b, genes, n_bootstrap, rng,
+                        ci=0.95, chunk=500):
+    """Macro-F1(a) - macro-F1(b) on the SAME resampled genes. Genes are drawn
+    with replacement (a multinomial count per gene), so isoforms stay together
+    and both methods see identical resamples. Returns point, ci_low, ci_high,
+    p (two-sided bootstrap p, resolution 1/n_bootstrap)."""
+    codes, uniq = pd.factorize(genes)
+    G = len(uniq)
+    ca = _gene_confusion(y_true, pred_a, codes, G)
+    cb = _gene_confusion(y_true, pred_b, codes, G)
+    point = float(_macro_f1_counts(ca.sum(0)) - _macro_f1_counts(cb.sum(0)))
+    diffs = np.empty(n_bootstrap)
+    probs = np.full(G, 1.0 / G)
+    for s in range(0, n_bootstrap, chunk):
+        m = min(chunk, n_bootstrap - s)
+        W = rng.multinomial(G, probs, size=m)
+        diffs[s:s + m] = _macro_f1_counts(W @ ca) - _macro_f1_counts(W @ cb)
+    a = (1 - ci) / 2
+    lo, hi = np.quantile(diffs, [a, 1 - a])
+    p = min(1.0, 2 * min((diffs <= 0).sum() + 1, (diffs >= 0).sum() + 1) / (n_bootstrap + 1))
+    return point, float(lo), float(hi), float(p), G
+
+
+def run_paired(ref, scores, labels, thresholds, gene_df, n_bootstrap, rng):
+    if ref not in scores:
+        print(f"  WARNING: paired reference '{ref}' not available; skipping paired table")
+        return []
+    rows = []
+    for name, sdf in scores.items():
+        if name == ref:
+            continue
+        m = (scores[ref].rename(columns={"y_score": "s_ref"})
+             .merge(sdf.rename(columns={"y_score": "s_oth"}), on="id")
+             .merge(labels, on="id"))
+        if gene_df is not None:
+            m = m.merge(gene_df, on="id", how="left")
+            miss = m["gene"].isna() | (m["gene"] == "")
+            m.loc[miss, "gene"] = "NOGENE_" + m.loc[miss, "id"]
+            genes = m["gene"].values
+        else:
+            genes = m["id"].values          # no gene map: every transcript its own cluster
+        if m.empty:
+            continue
+        y = m["y_true"].astype(int).values
+        pr = (m["s_ref"].values >= thresholds[ref]).astype(int)
+        po = (m["s_oth"].values >= thresholds[name]).astype(int)
+        d, lo, hi, p, G = paired_f1_bootstrap(y, pr, po, genes, n_bootstrap, rng)
+        rows.append(dict(reference=ref, method=name, n_samples=len(m), n_genes=G,
+                         n_lnc=int((y == 0).sum()), n_pc=int((y == 1).sum()),
+                         f1_reference=float(_macro_f1_counts(
+                             _gene_confusion(y, pr, np.zeros(len(y), int), 1)[0])),
+                         f1_method=float(_macro_f1_counts(
+                             _gene_confusion(y, po, np.zeros(len(y), int), 1)[0])),
+                         diff=d, diff_ci_low=lo, diff_ci_high=hi, p_boot=p))
+        print(f"  {ref} - {name}: dF1={d:+.4f} [{lo:+.4f}, {hi:+.4f}] p={p:.4g} "
+              f"(n={len(m)}, genes={G})")
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Contrast between two subsets: is the gap to the reference the same in both?
+# ---------------------------------------------------------------------------
+
+_METRICS = {
+    "f1": _macro_f1_counts,
+    # confusion layout: [tn, fp, fn, tp], class 1 (pc) positive
+    "recall_lnc": lambda c: np.where(c[..., 0] + c[..., 1] > 0,
+                                     c[..., 0] / np.maximum(c[..., 0] + c[..., 1], 1), 0.0),
+    "recall_pc":  lambda c: np.where(c[..., 2] + c[..., 3] > 0,
+                                     c[..., 3] / np.maximum(c[..., 2] + c[..., 3], 1), 0.0),
+}
+
+
+def contrast_bootstrap(y, pred_ref, pred_oth, genes, in_a, metrics, n_bootstrap,
+                       rng, ci=0.95, chunk=500):
+    """For each metric: (ref - other) on subset A, the same on subset B, and
+    the swing = diff_A - diff_B. Genes are resampled over A and B together
+    (a gene can have transcripts in both), the same resample for every
+    quantity. Returns {metric: dict}."""
+    codes, uniq = pd.factorize(genes)
+    G = len(uniq)
+
+    def counts(pred, mask):
+        return _gene_confusion(y[mask], pred[mask], codes[mask], G)
+
+    cr_a, cr_b = counts(pred_ref, in_a), counts(pred_ref, ~in_a)
+    co_a, co_b = counts(pred_oth, in_a), counts(pred_oth, ~in_a)
+    point = {}
+    for k in metrics:
+        f = _METRICS[k]
+        point[k] = (float(f(cr_a.sum(0)) - f(co_a.sum(0))),
+                    float(f(cr_b.sum(0)) - f(co_b.sum(0))))
+    draws = {k: np.empty((n_bootstrap, 2)) for k in metrics}
+    probs = np.full(G, 1.0 / G)
+    for s in range(0, n_bootstrap, chunk):
+        m = min(chunk, n_bootstrap - s)
+        W = rng.multinomial(G, probs, size=m)
+        for k in metrics:
+            f = _METRICS[k]
+            draws[k][s:s + m, 0] = f(W @ cr_a) - f(W @ co_a)
+            draws[k][s:s + m, 1] = f(W @ cr_b) - f(W @ co_b)
+    a = (1 - ci) / 2
+    out = {}
+    for k in metrics:
+        da, db = draws[k][:, 0], draws[k][:, 1]
+        sw = da - db
+        qa, qb, qs = (np.quantile(v, [a, 1 - a]) for v in (da, db, sw))
+        p = min(1.0, 2 * min((sw <= 0).sum() + 1, (sw >= 0).sum() + 1) / (n_bootstrap + 1))
+        out[k] = dict(diff_focus=point[k][0], diff_focus_ci_low=float(qa[0]), diff_focus_ci_high=float(qa[1]),
+                      diff_contrast=point[k][1], diff_contrast_ci_low=float(qb[0]), diff_contrast_ci_high=float(qb[1]),
+                      swing=point[k][0] - point[k][1], swing_ci_low=float(qs[0]), swing_ci_high=float(qs[1]),
+                      p_swing=float(p))
+    return out, G
+
+
+def run_contrast(ref, scores, labels_all, ids_focus, ids_contrast, thresholds,
+                 gene_df, metrics, n_bootstrap, rng, common_only):
+    if ref not in scores:
+        print(f"  WARNING: contrast reference '{ref}' not available; skipping")
+        return []
+    ids_focus, ids_contrast = set(ids_focus), set(ids_contrast)
+    if ids_focus & ids_contrast:
+        sys.exit("ERROR: --id_list and --contrast_id_list overlap")
+    lab = labels_all[labels_all["id"].isin(ids_focus | ids_contrast)]
+    if common_only:
+        for sdf in scores.values():
+            lab = lab[lab["id"].isin(set(sdf["id"]))]
+    rows = []
+    for name, sdf in scores.items():
+        if name == ref:
+            continue
+        m = (scores[ref].rename(columns={"y_score": "s_ref"})
+             .merge(sdf.rename(columns={"y_score": "s_oth"}), on="id")
+             .merge(lab, on="id"))
+        if gene_df is not None:
+            m = m.merge(gene_df, on="id", how="left")
+            miss = m["gene"].isna() | (m["gene"] == "")
+            m.loc[miss, "gene"] = "NOGENE_" + m.loc[miss, "id"]
+            genes = m["gene"].values
+        else:
+            genes = m["id"].values
+        in_a = m["id"].isin(ids_focus).values
+        if in_a.all() or (~in_a).all():
+            print(f"  [{name}] one of the two subsets is empty after merging; skipped")
+            continue
+        y = m["y_true"].astype(int).values
+        pr = (m["s_ref"].values >= thresholds[ref]).astype(int)
+        po = (m["s_oth"].values >= thresholds[name]).astype(int)
+        stats, G = contrast_bootstrap(y, pr, po, genes, in_a, metrics, n_bootstrap, rng)
+        for k, v in stats.items():
+            rows.append(dict(reference=ref, method=name, metric=k, n_focus=int(in_a.sum()),
+                             n_contrast=int((~in_a).sum()), n_genes=G, **v))
+            print(f"  {ref} - {name} [{k}]: focus {v['diff_focus']:+.4f}, contrast "
+                  f"{v['diff_contrast']:+.4f}, swing {v['swing']:+.4f} "
+                  f"[{v['swing_ci_low']:+.4f}, {v['swing_ci_high']:+.4f}] p={v['p_swing']:.4g}")
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -423,6 +601,24 @@ def main():
     p.add_argument("--common_subset",    action="store_true",
                    help="score every method on the transcripts ALL methods returned; "
                         "the all-available table is also written (..._allavailable.csv)")
+    p.add_argument("--id_list",          default=None,
+                   help="text file of transcript IDs (one per line, version "
+                        "suffix optional); restrict every method to them "
+                        "(e.g. unseen_subset.py output)")
+    p.add_argument("--paired_ref",       default="blnc",
+                   help="reference method for the paired gene-clustered bootstrap "
+                        "of the macro-F1 difference (written to "
+                        "benchmark_paired_vs_<ref>.csv); the same transcripts "
+                        "and gene resamples are used for both methods")
+    p.add_argument("--no_paired",        action="store_true")
+    p.add_argument("--contrast_id_list", default=None,
+                   help="second ID list (disjoint from --id_list). Adds "
+                        "benchmark_contrast_vs_<ref>.csv: for each method, the "
+                        "reference-minus-method difference on --id_list (focus) "
+                        "and on this list (contrast), and their swing "
+                        "(focus - contrast), gene-clustered over both lists")
+    p.add_argument("--contrast_metrics", nargs="+", default=["f1", "recall_lnc"],
+                   choices=["f1", "recall_lnc", "recall_pc"])
     p.add_argument("--n_bootstrap",      type=int, default=10000)
     p.add_argument("--seed",             type=int, default=42)
     p.add_argument("--output_dir",       required=True)
@@ -435,6 +631,16 @@ def main():
     print(f"Canonical labels: --blnc_csv ({args.blnc_csv})")
     labels_df = load_canonical_labels(args.blnc_csv)
     print(f"  {len(labels_df)} transcripts with valid labels")
+    labels_all = labels_df
+    if args.contrast_id_list and not args.id_list:
+        sys.exit("ERROR: --contrast_id_list needs --id_list (the focus subset)")
+    if args.id_list:
+        keep = {l.strip().split(".")[0] for l in open(args.id_list) if l.strip()}
+        labels_df = labels_df[labels_df["id"].isin(keep)]
+        print(f"  --id_list ({args.id_list}): {len(labels_df)} of {len(keep)} "
+              f"listed IDs are in the labelled test set")
+        if labels_df.empty:
+            sys.exit("ERROR: --id_list leaves no labelled transcripts")
 
     gene_df = None
     fastas = [f for f in (args.test_lnc_fasta, args.test_pc_fasta) if f]
@@ -496,6 +702,7 @@ def main():
         return out
 
     common_info = None
+    eval_labels = labels_df
     all_rows = run_table(labels_df, "own available set")
     rows = all_rows
     if args.common_subset:
@@ -507,6 +714,7 @@ def main():
                                    for i in dropped["id"]]
         dropped.to_csv(out_dir / "excluded_ids_common_subset.csv", index=False)
         lab_c = labels_df[labels_df["id"].isin(common)]
+        eval_labels = lab_c
         common_info = dict(n_common=int(len(common)), n_excluded=int(len(dropped)),
                            excluded_lnc=int((dropped.y_true == 0).sum()),
                            excluded_pc=int((dropped.y_true == 1).sum()),
@@ -524,6 +732,7 @@ def main():
     out_df = pd.DataFrame(rows).sort_values("f1", ascending=False)
     prov = dict(
         created=datetime.datetime.now().isoformat(timespec="seconds"),
+        id_list=dict(path=args.id_list, sha256_16=sha256_short(args.id_list)) if args.id_list else None,
         n_test_records=int(len(labels_df)),
         n_lnc=int((labels_df.y_true == 0).sum()), n_pc=int((labels_df.y_true == 1).sum()),
         n_genes=int(gene_df.loc[gene_df.id.isin(labels_df.id), "gene"].nunique()) if gene_df is not None else None,
@@ -540,6 +749,26 @@ def main():
     (out_dir / "benchmark_provenance.json").write_text(json.dumps(prov, indent=2))
     out_path = out_dir / "benchmark_table_with_ci.csv"
     out_df.to_csv(out_path, index=False)
+    if not args.no_paired:
+        print(f"\nPaired gene-clustered bootstrap vs {args.paired_ref} "
+              f"({'common subset' if args.common_subset else 'own available set'}):")
+        if gene_df is None:
+            print("  WARNING: no test FASTAs -> transcripts treated as independent clusters")
+        prow = run_paired(args.paired_ref, scores, eval_labels, thresholds,
+                          gene_df, args.n_bootstrap, rng)
+        if prow:
+            pd.DataFrame(prow).to_csv(out_dir / f"benchmark_paired_vs_{args.paired_ref}.csv",
+                                      index=False)
+    if args.contrast_id_list:
+        ids_c = {l.strip().split(".")[0] for l in open(args.contrast_id_list) if l.strip()}
+        print(f"\nContrast: focus = {args.id_list} ({labels_df['id'].nunique()} labelled), "
+              f"contrast = {args.contrast_id_list} ({len(ids_c)} listed)")
+        crow = run_contrast(args.paired_ref, scores, labels_all, set(labels_df["id"]), ids_c,
+                            thresholds, gene_df, args.contrast_metrics, args.n_bootstrap,
+                            rng, args.common_subset)
+        if crow:
+            pd.DataFrame(crow).to_csv(out_dir / f"benchmark_contrast_vs_{args.paired_ref}.csv",
+                                      index=False)
     print(f"\nSaved: {out_path}")
     print(out_df.to_string(index=False))
 
