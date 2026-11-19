@@ -33,6 +33,7 @@ gencode_v47_experiments_genegrouped/
 gencode_v49_experiments_genegrouped/
 logs*/*
 lncrnapy/
+OUT/
 
 # IDE
 .vscode/
@@ -47,3 +48,4 @@ LncDC*
 cpc2/
 Orthrus*
 rnasamba*
+gencode_release_index/
