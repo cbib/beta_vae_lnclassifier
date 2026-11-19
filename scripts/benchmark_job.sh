@@ -11,16 +11,16 @@
 # Gene-grouped benchmark for one release (tools + CIs + ensemble_vs_models + UpSet).
 #
 #   sbatch scripts/benchmark_job.sh --release 47 \
-#       --exp_dir gencode_v47_experiments_genegrouped/<experiment> --evaluate
+#       --exp_dir gencode_v47_experiments/<experiment> --evaluate
 #   sbatch scripts/benchmark_job.sh --release 49 \
-#       --exp_dir gencode_v49_experiments_genegrouped/beta_vae_subgroup_base_g49_genegrouped
+#       --exp_dir gencode_v49_experiments/beta_vae_subgroup_base_g49
 #
 # Options
 #   --release N        47 | 49
 #   --exp_dir DIR      trained experiment folder (holds models/ and evaluation_csvs/)
-#   --config FILE      training config (default configs/beta_vae_subgroup_g<N>_genegrouped.json)
-#   --split_dir DIR    default data/split_gencode_<N>_genegrouped
-#   --base_dir DIR     benchmark output root (default gencode_v<N>_experiments_genegrouped);
+#   --config FILE      training config (default configs/beta_vae_subgroup_base_g<N>.json)
+#   --split_dir DIR    default data/split_gencode_<N>
+#   --base_dir DIR     benchmark output root (default gencode_v<N>_experiments);
 #                      must be where finished tool outputs live, else they are rerun
 #   --evaluate         run evaluate_cv_fold_subgroup.py first if test_predictions.csv /
 #                      test_fold_probs.csv are missing (also for the feature-only model)
@@ -42,10 +42,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$REL" && -n "$EXP" ]] || { echo "need --release and --exp_dir" >&2; exit 2; }
-CFG="${CFG:-configs/beta_vae_subgroup_g${REL}_genegrouped.json}"
-SPLIT="${SPLIT:-data/split_gencode_${REL}_genegrouped}"
-BASE="${BASE:-gencode_v${REL}_experiments_genegrouped}"
-EVAL_SCRIPT=analysis/post_training_pipeline/scripts/evaluate_cv_fold_subgroup.py   # adjust if elsewhere
+CFG="${CFG:-configs/beta_vae_subgroup_base_g${REL}.json}"
+SPLIT="${SPLIT:-data/split_gencode_${REL}}"
+BASE="${BASE:-gencode_v${REL}_experiments}"
+EVAL_SCRIPT=analysis/evaluation/evaluate_cv_fold_subgroup.py   # adjust if elsewhere
 
 module load nvidia/cuda/12.1
 eval "$(conda shell.bash hook)"
