@@ -4,8 +4,7 @@
 pipeline_audit.py - one-shot, multi-layer audit of a beta-LNC experiment.
 
 Stages (each prints PASS / WARN / FAIL lines; exit code 1 if any FAIL):
-  config    paths exist; one release; group_by_gene on; split FASTAs in one folder;
-            lambda_conc explicit
+  config    paths exist; one release; group_by_gene on; split FASTAs in one folder
   split     ID/version collisions; gene + sequence overlap train/val vs test
   features  ID coverage; duplicates; NaN; structured zeros (position / ENST order /
             split); proportion groups summing to 1; column order vs *_feature_names.txt
@@ -198,10 +197,6 @@ def stage_config(c: Ctx):
                   if c.d.get(k)}
     rec("PASS" if len(split_dirs) == 1 else "FAIL", "config", "split_dir",
         f"train/val and test FASTAs come from {len(split_dirs)} folder(s): {sorted(split_dirs)}")
-    if "lambda_conc" not in c.t:
-        rec("FAIL", "config", "lambda_conc", "training.lambda_conc not set explicitly")
-    else:
-        rec("INFO", "config", "lambda_conc", f"lambda_conc = {c.t['lambda_conc']}")
     dirs = {Path(v).parent for k, v in c.d.items()
             if isinstance(v, str) and (k.endswith("_genomic_csv") or k == "nonb2_csv" or k.endswith("scaler_bank_path"))}
     if len(dirs) > 1:

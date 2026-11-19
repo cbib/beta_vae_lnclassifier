@@ -98,12 +98,12 @@ NF=$(python - "$CFG" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))
 t = c.get("training", {})
-print(t.get("n_folds", 5), t.get("group_by_gene", False), t.get("lambda_conc", "unset"))
+print(t.get("n_folds", 5), t.get("group_by_gene", False))
 m = c.get("model", {})
 print(str(m.get("architecture", m.get("type", c.get("architecture", "")))))
 PY
 )
-read -r N_FOLDS GBG LAMBDA <<<"$(head -1 <<<"$NF")"
+read -r N_FOLDS GBG <<<"$(head -1 <<<"$NF")"
 ARCH=$(sed -n 2p <<<"$NF")
 FEATONLY=0
 [[ "$ARCH" == *feature_only* || "$CFG" == *feature_only* || "$EXP" == *feature_only* ]] && FEATONLY=1
@@ -115,7 +115,7 @@ if [[ "$GBG" != "True" ]]; then
   (( LEGACY )) || fail "group_by_gene is $GBG in $CFG (use --allow-legacy for old, leaky models)"
   echo "WARNING: group_by_gene is $GBG: results are on gene-leaky folds" >&2
 fi
-echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG lambda_conc=$LAMBDA feature_only=$FEATONLY"
+echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG feature_only=$FEATONLY"
 echo "out=$OUT  mstar=$MSTAR"
 
 if (( ! DRY )); then

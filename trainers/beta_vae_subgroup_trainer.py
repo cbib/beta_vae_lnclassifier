@@ -52,23 +52,6 @@ def _forward_kwargs(batch: dict, device: torch.device) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Orthogonality loss helper (unchanged)
-# ---------------------------------------------------------------------------
-
-def orthogonality_loss(attn_weights: torch.Tensor) -> torch.Tensor:
-    """
-    Penalise cosine similarity between attention distributions across heads.
-    """
-    h_dist = attn_weights.mean(dim=(0, 2))   # (H, N)
-    h_norm = F.normalize(h_dist, p=2, dim=-1)
-    sim_matrix = torch.matmul(h_norm, h_norm.t())
-    H = sim_matrix.shape[0]
-    mask = ~torch.eye(H, dtype=torch.bool, device=sim_matrix.device)
-    off_diag = sim_matrix[mask]
-    return off_diag.mean()
-
-
-# ---------------------------------------------------------------------------
 # Loss
 # ---------------------------------------------------------------------------
 
@@ -89,10 +72,7 @@ class BetaVAESubgroupLoss:
         lambda_recon:         float = 1.0,
         reconstruction_loss:  str   = "mse",
         class_weights:        Optional[torch.Tensor] = None,
-        gamma_attn:           float = 0.0,
         lambda_feat:          Optional[Dict[str, float]] = None,
-        lambda_conc:          float = 0.1,
-        lambda_ortho:         float = 0.0,
     ) -> None:
         self.alpha                = alpha
         self.beta                 = beta
@@ -100,15 +80,12 @@ class BetaVAESubgroupLoss:
         self.lambda_recon         = lambda_recon
         self.reconstruction_loss  = reconstruction_loss
         self.class_weights        = class_weights
-        self.gamma_attn           = gamma_attn
         # Default: every registry block gets lambda 0.0 unless overridden
         self.lambda_feat: Dict[str, float] = {
             b: 0.0 for b in REGISTRY.block_names
         }
         if lambda_feat:
             self.lambda_feat.update(lambda_feat)
-        self.lambda_conc  = lambda_conc
-        self.lambda_ortho = lambda_ortho
 
     def _recon_loss(self, x_recon: torch.Tensor, x_true: torch.Tensor) -> torch.Tensor:
         if x_recon.shape != x_true.shape:
@@ -161,35 +138,12 @@ class BetaVAESubgroupLoss:
                 if w > 0:
                     total = total + w * loss_val
 
-        # ── Entropy regularisation ───────────────────────────────────────────
-        entropy_val = None
-        if attn_weights is not None and self.gamma_attn > 0:
-            aw          = attn_weights.mean(dim=1)
-            entropy_val = -(aw * torch.log(aw + 1e-8)).sum(-1).mean()
-            total       = total - self.gamma_attn * entropy_val
-
-        # ── Concentration loss ───────────────────────────────────────────────
-        conc_val = None
-        if attn_weights is not None and self.lambda_conc > 0:
-            aw_mean  = attn_weights.mean(dim=(1, 2))
-            top3     = aw_mean.topk(k=min(3, aw_mean.shape[-1]), dim=-1).values
-            conc_val = top3.sum(-1).mean()
-            total    = total - self.lambda_conc * conc_val
-
-        # ── Orthogonality loss ───────────────────────────────────────────────
-        ortho_val = None
-        if attn_weights is not None and self.lambda_ortho > 0:
-            ortho_val = orthogonality_loss(attn_weights)
-            total     = total + self.lambda_ortho * ortho_val
 
         loss_dict = {
             "loss":           total.item(),
             "reconstruction": recon.item(),
             "kl":             kl.item(),
-            "classification": cls.item(),
-            "attn_entropy":   entropy_val.item() if entropy_val is not None else None,
-            "conc":           conc_val.item()    if conc_val    is not None else None,
-            "ortho":          ortho_val.item()   if ortho_val   is not None else None,
+            "classification": cls.item()
         }
         # Per-block auxiliary loss entries: feat_{block_name}
         for block_name, loss_val in feat_losses.items():
@@ -220,10 +174,7 @@ class SingleFoldSubgroupTrainer:
         lambda_recon:         float = 1.0,
         reconstruction_loss:  str   = "mse",
         class_weights         = None,
-        gamma_attn:           float = 0.0,
         lambda_feat:          Optional[Dict[str, float]] = None,
-        lambda_conc:          float = 0.1,
-        lambda_ortho:         float = 0.0,
         kl_anneal_epochs:     int   = 20,
         kl_anneal_end:        float = 4.0,
         device                = None,
@@ -250,10 +201,7 @@ class SingleFoldSubgroupTrainer:
             lambda_recon=lambda_recon,
             reconstruction_loss=reconstruction_loss,
             class_weights=cw,
-            gamma_attn=gamma_attn,
-            lambda_feat=lambda_feat,
-            lambda_conc=lambda_conc,
-            lambda_ortho=lambda_ortho,
+            lambda_feat=lambda_feat
         )
 
         # ── LR groups ─────────────────────────────────────────────────────────
@@ -287,7 +235,7 @@ class SingleFoldSubgroupTrainer:
         self.history: Dict[str, List] = {
             "train_loss": [], "train_reconstruction": [], "train_kl": [],
             "train_classification": [], "val_loss": [], "val_acc": [],
-            "attn_entropy": [], "train_conc": [], "train_ortho": [],
+            "attn_entropy": []
         }
         for block_name in REGISTRY.block_names:
             self.history[f"train_feat_{block_name}"] = []
@@ -345,27 +293,17 @@ class SingleFoldSubgroupTrainer:
         return self.kl_anneal_start + (epoch / self.kl_anneal_epochs) * (
             self.kl_anneal_end - self.kl_anneal_start)
 
-    def get_current_gamma_attn(self, epoch: int) -> float:
-        base = self.criterion.gamma_attn
-        if base == 0.0:
-            return 0.0
-        if epoch >= self.kl_anneal_epochs:
-            return base * 0.1
-        return base * (1.0 - 0.9 * (epoch / self.kl_anneal_epochs))
-
     # ── train / eval ─────────────────────────────────────────────────────────
 
     def train_epoch(self, epoch_num: int) -> Dict:
         self.model.train()
 
-        tracked_keys = ["loss", "reconstruction", "kl", "classification",
-                        "conc", "ortho"] + [f"feat_{b}" for b in REGISTRY.block_names]
+        tracked_keys = ["loss", "reconstruction", "kl", "classification"] + [f"feat_{b}" for b in REGISTRY.block_names]
         totals       = {k: 0.0 for k in tracked_keys}
         totals_count = {k: 0   for k in tracked_keys}
         attn_entropy_batches = []
 
         self.criterion.beta       = self.get_current_beta(epoch_num)
-        self.criterion.gamma_attn = self.get_current_gamma_attn(epoch_num)
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch_num} [Train]", leave=False)
         for batch in pbar:
@@ -449,8 +387,7 @@ class SingleFoldSubgroupTrainer:
             self.history["train_classification"].append(train_m["classification"])
             self.history["val_loss"].append(val_m["loss"])
             self.history["val_acc"].append(val_m["accuracy"])
-            for aux_key in (["conc", "ortho"]
-                            + [f"feat_{b}" for b in REGISTRY.block_names]):
+            for aux_key in ([f"feat_{b}" for b in REGISTRY.block_names]):
                 v = train_m.get(aux_key)
                 if v is not None:
                     self.history[f"train_{aux_key}"].append(v)
@@ -466,10 +403,6 @@ class SingleFoldSubgroupTrainer:
                 if v is not None:
                     short = block_name[:4]  # nonb→nonb, te→te, nonb2→nonb
                     aux_parts.append(f"f_{block_name}={v:.3f}")
-            for key, short in [("conc", "conc"), ("ortho", "ortho")]:
-                v = train_m.get(key)
-                if v is not None:
-                    aux_parts.append(f"{short}={v:.3f}")
             aux_str = (" " + " ".join(aux_parts)) if aux_parts else ""
 
             print(f"Epoch {epoch:3d}/{num_epochs} | "
@@ -591,10 +524,7 @@ class BetaVAESubgroupTrainer:
             lambda_recon         = self.config.get("training", "lambda_recon"),
             reconstruction_loss  = self.config.get("training", "reconstruction_loss"),
             class_weights        = class_weights,
-            gamma_attn           = self.config.get("training", "gamma_attn", default=0.0),
             lambda_feat          = self._lambda_feat_from_config(self.config),
-            lambda_conc          = self.config.get("training", "lambda_conc",  default=0.1),
-            lambda_ortho         = self.config.get("training", "lambda_ortho", default=0.0),
             kl_anneal_epochs     = self.config.get("training", "kl_anneal_epochs", default=20),
             kl_anneal_end        = self.config.get("training", "kl_anneal_end",    default=4.0),
             device               = self.device,

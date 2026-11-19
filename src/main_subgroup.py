@@ -33,7 +33,7 @@ def _build_dataset(config, lnc_fasta, pc_fasta):
     if nonb2_csv is not None and nonb2_scaler is None:
         raise ValueError(
             "Config has data.nonb2_csv set but no data.nonb2_scaler_bank_path. "
-            "Run prepare_features.py with --nonb2_csv to generate the scaler bank."
+            "Run prep_features.py with --nonb2_csv to generate the scaler bank."
         )
 
     return SequenceFeatureDataset(
@@ -212,8 +212,6 @@ def main():
         "batch_size":       config.get("training", "batch_size"),
         "num_epochs":       config.get("training", "num_epochs"),
         "lambda_feat":      lambda_feat,
-        "lambda_conc":      config.get("training", "lambda_conc",  default=0.1),
-        "lambda_ortho":     config.get("training", "lambda_ortho", default=0.0),
         "n_folds":          config.get("training", "n_folds"),
         "registry_blocks":  REGISTRY.block_names,
         "total_tokens":     REGISTRY.total_tokens,
