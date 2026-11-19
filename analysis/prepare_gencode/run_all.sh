@@ -89,7 +89,7 @@ echo ""
 # Step 7: Train/val + test split (optional)
 if [ "${DO_SPLIT}" = "1" ]; then
     echo "[Step 7/7] Creating train/val and test split..."
-    python "${PROJECT_ROOT}/scripts/split_test_set.py" \
+    python "${PROJECT_ROOT}/analysis/prepare_gencode/scripts/split_test_set.py" \
         --lnc_fasta data/cdhit/lnc_clustered.fa \
         --pc_fasta  data/cdhit/pc_clustered.fa \
         --output_dir data/splits/ \
@@ -99,7 +99,7 @@ if [ "${DO_SPLIT}" = "1" ]; then
 else
     echo "[Step 7/7] Skipping split (DO_SPLIT not set)"
     echo "  To create a train/val + test split, run:"
-    echo "  python scripts/split_test_set.py \\"
+    echo "  python analysis/prepare_gencode/scripts/split_test_set.py \\"
     echo "    --lnc_fasta data/cdhit/lnc_clustered.fa \\"
     echo "    --pc_fasta  data/cdhit/pc_clustered.fa \\"
     echo "    --output_dir data/splits/"

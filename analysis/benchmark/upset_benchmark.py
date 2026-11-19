@@ -26,7 +26,7 @@ Requires upsetplot >= 0.9:
 
 Usage
 -----
-python analysis/plot_upset_benchmark.py \
+python analysis/benchmark/upset_benchmark.py \
     --predictions_csv  gencode_v49_experiments/benchmark_comparison/predictions_merged.csv \
     --output_dir       gencode_v49_experiments/benchmark_comparison \
     [--min_set_size    50] \

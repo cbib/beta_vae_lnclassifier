@@ -11,7 +11,7 @@
 #
 # Usage
 # -----
-# bash analysis/run_full_benchmark.sh \
+# bash analysis/benchmark/run_full_benchmark.sh \
 #     --release v49 \
 #     --base_dir gencode_v49_experiments \
 #     --lnc_fasta       data/split_gencode_49/lnc_test.fa \

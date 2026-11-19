@@ -25,7 +25,7 @@ A sample is flagged as a hard case if:
 
 Usage
 -----
-python src/evaluate_cv_subgroup.py \\
+python analysis/evaluation/evaluate_cv_fold_subgroup.py \\
     --config         configs/beta_vae_subgroup_base_g49.json \\
     --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \\
     --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs \\

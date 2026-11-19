@@ -20,14 +20,14 @@ Output columns
 Usage
 -----
 # Single release
-python analysis/convert_lncrnabert_predictions.py \
+python analysis/benchmark/convert_lncrnabert_predictions.py \
     --pred_csv      data/lncRNABERT_results/g47_lncRNABERT_results.csv \
     --lnc_fasta     data/split_gencode_47/lnc_test.fa \
     --pc_fasta      data/split_gencode_47/pc_test.fa \
     --output_csv    gencode_v47_experiments/benchmark_tools/lncrnabert_test_predictions.csv
 
 # Both releases in one call
-python analysis/convert_lncrnabert_predictions.py \
+python analysis/benchmark/convert_lncrnabert_predictions.py \
     --pred_csv      data/lncRNABERT_results/g47_lncRNABERT_results.csv \
     --lnc_fasta     data/split_gencode_47/lnc_test.fa \
     --pc_fasta      data/split_gencode_47/pc_test.fa \

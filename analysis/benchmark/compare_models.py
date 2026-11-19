@@ -44,7 +44,7 @@ lncRNABERT  : lncrnabert_test_predictions.csv from convert_lncrnabert_prediction
 
 Usage
 -----
-python analysis/compare_models.py \\
+python analysis/benchmark/compare_models.py \\
     --blnc_csv      .../test_predictions.csv \\
     --cpat_csv      .../cpat/predictions_with_cpat.csv \\
     --cpc2_tsv      .../cpc2_results.tsv \\

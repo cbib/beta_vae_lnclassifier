@@ -34,7 +34,7 @@ Outputs written to --output_dir
 Usage
 -----
 # Basic
-python src/evaluate_orthrus.py \
+python analysis/benchmark/evaluate_orthrus.py \
     --train_lnc_fasta  data/split_gencode_49/lnc_trainval.fa \
     --train_pc_fasta   data/split_gencode_49/pc_trainval.fa \
     --test_lnc_fasta   data/split_gencode_49/lnc_test.fa \
@@ -42,7 +42,7 @@ python src/evaluate_orthrus.py \
     --output_dir       gencode_v49_experiments/orthrus_evaluation
 
 # With unpooled positional embeddings (uses a separate smaller batch size):
-python src/evaluate_orthrus.py \
+python analysis/benchmark/evaluate_orthrus.py \
     ... \
     --save_unpooled \
     --unpooled_batch_size 16
