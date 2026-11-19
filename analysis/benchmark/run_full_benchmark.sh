@@ -35,7 +35,13 @@
 #     [--min_set_size 5] \
 #     [--orthrus_env  ${HOME}/.conda/envs/orthrus] \
 #     [--rnasamba_sif rnasamba.sif] \
-#     [--max_length   15000]
+#     [--max_length   15000] \
+#     [--run_unseen   true] [--unseen_cutoff 46] \
+#     [--unseen_cache gencode_release_index] [--local_gtf_dir DIR]
+#
+# Stage 4 (run_unseen_benchmark.sh) scores the same predictions on the
+# transcripts unseen / seen by the cutoff release (B2, B3). It needs the GENCODE
+# release index in --unseen_cache (or network access, or --local_gtf_dir).
 #
 # Notes
 # -----
@@ -98,6 +104,12 @@ RNASAMBA_SIF="rnasamba.sif"
 THREADS=8
 MAX_LENGTH=15000
 
+# seen/unseen benchmark (Stage 4, runs after the main outputs exist)
+RUN_UNSEEN=true
+UNSEEN_CUTOFF=46
+UNSEEN_CACHE="gencode_release_index"
+LOCAL_GTF_DIR=""
+
 # compare_models / upset options
 ERROR_ONLY=false
 MIN_SET_SIZE=6
@@ -144,6 +156,10 @@ while [[ $# -gt 0 ]]; do
         --rnasamba_sif)       RNASAMBA_SIF="$2";       shift 2 ;;
         --threads)            THREADS="$2";            shift 2 ;;
         --max_length)         MAX_LENGTH="$2";         shift 2 ;;
+        --run_unseen)         RUN_UNSEEN="$2";         shift 2 ;;
+        --unseen_cutoff)      UNSEEN_CUTOFF="$2";      shift 2 ;;
+        --unseen_cache)       UNSEEN_CACHE="$2";       shift 2 ;;
+        --local_gtf_dir)      LOCAL_GTF_DIR="$2";      shift 2 ;;
 
         --error_only)         ERROR_ONLY=true;         shift 1 ;;
         --min_set_size)       MIN_SET_SIZE="$2";       shift 2 ;;
@@ -398,6 +414,18 @@ log "Command: python ${SCRIPT_DIR}/upset_benchmark.py ${UPSET_ARGS[*]}"
 python "${SCRIPT_DIR}/upset_benchmark.py" "${UPSET_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
 
 # =============================================================================
+# Stage 4 — seen/unseen benchmark (B2, B3), optional
+# =============================================================================
+if [[ "$RUN_UNSEEN" == "true" ]]; then
+    log_section "Stage 4 — run_unseen_benchmark.sh"
+    UNSEEN_ARGS=(--comparison_dir "$COMPARISON_DIR" --release "${RELEASE#v}"
+                 --cutoff "$UNSEEN_CUTOFF" --cache_dir "$UNSEEN_CACHE")
+    [[ -n "$LOCAL_GTF_DIR" ]] && UNSEEN_ARGS+=(--local_gtf_dir "$LOCAL_GTF_DIR")
+    log "Command: bash ${SCRIPT_DIR}/run_unseen_benchmark.sh ${UNSEEN_ARGS[*]}"
+    bash "${SCRIPT_DIR}/run_unseen_benchmark.sh" "${UNSEEN_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 log_section "Done — GENCODE ${RELEASE}"
@@ -411,4 +439,5 @@ $ERROR_ONLY && SUFFIX="_error_only"
 log "UpSet plots         : ${COMPARISON_DIR}/upset_hard_cases${SUFFIX}.png"
 log "                      ${COMPARISON_DIR}/upset_blnc_advantage${SUFFIX}.png"
 log ""
+[[ "$RUN_UNSEEN" == "true" ]] && log "Seen/unseen         : ${BASE_DIR}/benchmark_unseen_v${UNSEEN_CUTOFF}, ${BASE_DIR}/benchmark_seen_v${UNSEEN_CUTOFF}"
 log "Full log: ${LOG_FILE}"
