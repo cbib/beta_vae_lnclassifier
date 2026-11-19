@@ -13,11 +13,11 @@ EXP47=${EXP47:-$(python3 -c "import json;print(json.load(open('$CFG47'))['output
 sub() { if [[ -n "${DRY:-}" ]]; then echo "sbatch $*" >&2; echo "JOB_$RANDOM"; else sbatch --parsable "$@"; fi; }
 dep() { local d=""; for x in "$@"; do [[ -n "$x" ]] && d+="${d:+,}$x"; done; [[ -n "$d" ]] && echo "--dependency=$d" || true; }
 
-#D49=$(dep ${FEAT49_JOB:+afterok:$FEAT49_JOB})
-#J1=$(sub $D49 scripts/benchmark_job.sh --release 49 --exp_dir "$EXP49" \
-#        --feature_exp_dir "$FEAT49_EXP" --feature_config "$FEAT49_CFG" --evaluate)
-D47=$(dep ${TRAIN47_JOB:+afterok:$TRAIN47_JOB} ${FEAT47_JOB:+afterok:$FEAT47_JOB} afterany:$J1)
+D49=$(dep ${FEAT49_JOB:+afterok:$FEAT49_JOB})
+J1=$(sub $D49 scripts/benchmark_job.sh --release 49 --exp_dir "$EXP49" \
+        --feature_exp_dir "$FEAT49_EXP" --feature_config "$FEAT49_CFG" --evaluate)
+D47=$(dep ${TRAIN47_JOB:+afterok:$TRAIN47_JOB} ${FEAT47_JOB:+afterok:$FEAT47_JOB})
 J2=$(sub $D47 scripts/benchmark_job.sh --release 47 --exp_dir "$EXP47" \
         --feature_exp_dir "$FEAT47_EXP" --feature_config "$FEAT47_CFG" --evaluate)
-#echo "bench49=$J1 bench47=$J2"
+echo "bench49=$J1 bench47=$J2"
 echo "bench47=$J2"

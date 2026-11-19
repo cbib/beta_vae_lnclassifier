@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=train_subgroup_g47_genegrouped
-#SBATCH --output=logs/subgroup_g47_genegrouped_%j.log
-#SBATCH --error=logs/subgroup_g47_genegrouped_%j.err
-#SBATCH --gres=gpu:nvidia_h100_nvl_4g.47gb:1            # Request 1 GPU
+#SBATCH --job-name=train_subgroup_genegrouped
+#SBATCH --output=logs/subgroup_genegrouped_%j.log
+#SBATCH --error=logs/subgroup_genegrouped_%j.err
+#SBATCH --gres=gpu:nvidia_h100_nvl:1            # Request 1 GPU
 #SBATCH --partition=gpu              # Partition to submit to (e.g., GPU queue)
 #SBATCH --time=70:00:00    # Time limit day:hrs:min:sec
 #SBATCH --mem=24G
@@ -15,7 +15,7 @@ conda activate beta_lncrna
 cd ${DATA_ROOT}
 set -euo pipefail
 
-REL=47                                                    # 47 for the other release
+REL=47
 CFG=configs/beta_vae_subgroup_g${REL}_genegrouped.json
 
 # Pre-flight: every data path in the config exists; key settings are explicit

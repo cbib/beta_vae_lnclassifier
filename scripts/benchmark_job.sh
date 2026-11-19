@@ -2,7 +2,7 @@
 #SBATCH --job-name=bench
 #SBATCH --output=logs/bench_%j.log
 #SBATCH --error=logs/bench_%j.err
-#SBATCH --gres=gpu:nvidia_h100_nvl_4g.47gb:1
+#SBATCH --gres=gpu:nvidia_h100_nvl:1
 #SBATCH --partition=gpu
 #SBATCH --time=48:00:00
 #SBATCH --mem=64G

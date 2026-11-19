@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=layers
-#SBATCH --output=logs/layers_g47_%j.log
-#SBATCH --error=logs/layers_g47_%j.err
-#SBATCH --gres=gpu:nvidia_h100_nvl_4g.47gb:1
+#SBATCH --output=logs/layers_input_%j.log
+#SBATCH --error=logs/layers_input_%j.err
+#SBATCH --gres=gpu:nvidia_h100_nvl:1
 #SBATCH --partition=gpu
 #SBATCH --time=48:00:00
 #SBATCH --mem=32G
@@ -20,11 +20,15 @@
 #   --dry-run         print commands, run nothing
 #   --allow-legacy    do not fail when group_by_gene is false
 #
+# Feature-only experiments (architecture feature_only, or 'feature_only' in the config/experiment
+# name) run stage 1.2b only; every other stage needs the token architecture.
+#
 # Resume: resubmit the same command. A stage is skipped when its marker holds the
 # same command signature; changed parameters or --force rerun it.
 #
 # Stage ids (layer numbering as in the manuscript)
 #   1.1 representations  1.2 subgroup ablation  1.3 residual ablation  1.4 latent probing
+#   1.2b input-level ablation (zero/mean/permute; also runs on feature-only models)
 #   2.1 M*/Frechet       (per release, shared across experiments of that release)
 #   3.1 patching matched 3.2 patching controls  3.3 joint search  3.4 joint controls
 #   3.5 interventional results  S.1 / S.2 synthesis figures
@@ -74,6 +78,7 @@ fi
 OUT="$EXP/interpretability"
 REPR="$OUT/1.1_representations"
 ABL="$OUT/1.2_ablation"
+INABL="$OUT/1.2b_input_ablation"
 RABL="$OUT/1.3_residual_ablation"
 PROBE="$OUT/1.4_latent_probing"
 PATCH="$OUT/3.1_patching"
@@ -94,9 +99,14 @@ import json, sys
 c = json.load(open(sys.argv[1]))
 t = c.get("training", {})
 print(t.get("n_folds", 5), t.get("group_by_gene", False), t.get("lambda_conc", "unset"))
+m = c.get("model", {})
+print(str(m.get("architecture", m.get("type", c.get("architecture", "")))))
 PY
 )
-read -r N_FOLDS GBG LAMBDA <<<"$NF"
+read -r N_FOLDS GBG LAMBDA <<<"$(head -1 <<<"$NF")"
+ARCH=$(sed -n 2p <<<"$NF")
+FEATONLY=0
+[[ "$ARCH" == *feature_only* || "$CFG" == *feature_only* || "$EXP" == *feature_only* ]] && FEATONLY=1
 BASE=1; [[ -f "$EXP/models/fold_0_best.pt" ]] && BASE=0
 for ((i=BASE; i<BASE+N_FOLDS; i++)); do
   [[ -f "$EXP/models/fold_${i}_best.pt" ]] || fail "missing checkpoint $EXP/models/fold_${i}_best.pt ($N_FOLDS folds expected)"
@@ -105,7 +115,7 @@ if [[ "$GBG" != "True" ]]; then
   (( LEGACY )) || fail "group_by_gene is $GBG in $CFG (use --allow-legacy for old, leaky models)"
   echo "WARNING: group_by_gene is $GBG: results are on gene-leaky folds" >&2
 fi
-echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG lambda_conc=$LAMBDA"
+echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG lambda_conc=$LAMBDA feature_only=$FEATONLY"
 echo "out=$OUT  mstar=$MSTAR"
 
 if (( ! DRY )); then
@@ -127,6 +137,7 @@ fi
 # ---------------------------------------------------------------- stage runner
 stage() {  # stage <id> <name> <command...>
   local id="$1" name="$2"; shift 2
+  if (( FEATONLY )) && [[ "$id" != "1.2b" ]]; then return 0; fi
   if [[ -n "$ONLY" && ",$ONLY," != *",$id,"* ]]; then return 0; fi
   local sig; sig=$(printf '%s ' "$@" | sha256sum | cut -c1-16)
   if (( ! FORCE )) && [[ -f "$DONE/$id" && "$(cat "$DONE/$id")" == "$sig" ]]; then
@@ -139,7 +150,8 @@ stage() {  # stage <id> <name> <command...>
   echo "$sig" > "$DONE/$id"
   echo "[done ] $id $name ($((SECONDS - t0))s)"
 }
-selected() { [[ -z "$ONLY" || ",$ONLY," == *",$1,"* ]]; }
+selected() { (( FEATONLY )) && [[ "$1" != "1.2b" ]] && return 1
+  [[ -z "$ONLY" || ",$ONLY," == *",$1,"* ]]; }
 # need <stage-id> <files...>: fail early if a selected stage lacks inputs
 need() { local id="$1"; shift; selected "$id" || return 0
   for f in "$@"; do [[ -e "$f" || $DRY -eq 1 ]] || { echo "stage $id: missing input $f" >&2; exit 1; }; done; }
@@ -158,6 +170,10 @@ stage 1.1 "extract representations" \
 stage 1.2 "subgroup ablation" \
   python -m analysis.pattern.analyze_subgroup_ablation --experiment_dir "$EXP" --config "$CFG" \
     --output_dir "$ABL" --gencode_version "v$REL" --device "$DEVICE"
+
+stage 1.2b "input-level ablation (zero/mean/permute)" \
+  python -m analysis.pattern.analyze_input_ablation --experiment_dir "$EXP" --config "$CFG" \
+    --output_dir "$INABL" --device "$DEVICE" --verify
 
 stage 1.3 "residual ablation" \
   python -m analysis.pattern.analyze_residual_ablation --experiment_dir "$EXP" --repr_dir "$REPR" \
