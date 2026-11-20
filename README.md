@@ -122,6 +122,21 @@ conda env create -f environment.yml
 conda activate beta_lncrna
 ```
 
+`environment.yml` holds what the training, evaluation, interpretability and figure code imports, plus
+`pytest`; the CUDA 12.1 pins are those of the reported runs. On a machine without a GPU (tests,
+figures) create it without the CUDA lines:
+
+```bash
+grep -v -E "nvidia|pytorch-cuda|pytorch-mutex" environment.yml > /tmp/env_cpu.yml
+conda env create -f /tmp/env_cpu.yml
+```
+
+Other steps have their own environments: `cdhit_env.yml` (clustering), `lncrnabert_environment.yml`
+(lncRNA-BERT, see below) and, only for the equivalence checks in `analysis/triframe/`,
+`pip install triframe`. The remaining benchmark tools are not part of this repository: CPAT (needs R)
+and CPC2 run inside `beta_lncrna`, LncDC in `lncdc`, Orthrus in `orthrus`, RNAsamba in a Singularity
+image; the header of `analysis/benchmark/run_benchmark_tools.sh` names each.
+
 ### 3. Set PYTHONPATH
 
 Add this to your `~/.bashrc` (once):

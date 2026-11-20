@@ -1,7 +1,8 @@
+# CD-HIT for scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh (cd-hit-est).
+#   conda env create -f cdhit_env.yml && conda activate cdhit_env
 name: cdhit_env
 channels:
-  - bioconda
   - conda-forge
-  - defaults
+  - bioconda
 dependencies:
-  - cd-hit
+  - cd-hit=4.8.1
