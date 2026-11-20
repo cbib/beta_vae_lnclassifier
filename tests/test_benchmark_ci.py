@@ -3,6 +3,7 @@
 Protects: no DeLong or isoform-naive columns, point AUC equal to sklearn's,
 the test FASTAs being required, and the end-to-end CSV columns.
 """
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -92,3 +93,19 @@ def test_script_requires_the_test_fastas(data):
 
 def test_no_delong_code_left():
     assert not hasattr(ci, "delong_auc_ci") and not hasattr(ci, "bootstrap_f1_ci")
+
+
+def test_provenance_records_the_cpat_threshold_rule(data):
+    t = data["tmp"]
+    pd.DataFrame({"transcript_id": [f"ENST{g * 10:011d}" for g in range(N_GENES)],
+                  "coding_prob": data["p"][::ISOFORMS][:N_GENES]}).to_csv(t / "cpat.csv", index=False)
+    notes = {}
+    for tag, extra in (("default", []), ("override", ["--cpat_threshold", 0.41])):
+        out = t / f"out_cpat_{tag}"
+        r = _run(["--blnc_csv", t / "blnc.csv", "--cpat_csv", t / "cpat.csv",
+                  "--test_lnc_fasta", t / "lnc.fa", "--test_pc_fasta", t / "pc.fa",
+                  "--n_bootstrap", 50, "--no_paired", "--output_dir", out, *extra])
+        assert r.returncode == 0, r.stderr
+        notes[tag] = json.loads((out / "benchmark_provenance.json").read_text())["threshold_notes"]
+    assert "0.364" in notes["default"]["cpat"] and "not tuned on the test set" in notes["default"]["cpat"]
+    assert "--cpat_threshold" in notes["override"]["cpat"] and "0.41" in notes["override"]["cpat"]

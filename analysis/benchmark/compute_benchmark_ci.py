@@ -642,6 +642,13 @@ def main():
                  "--*_csv/--*_tsv argument points to a valid file")
 
     out_df = pd.DataFrame(rows).sort_values("f1", ascending=False)
+    threshold_notes = {"default": "0.5 for every method except CPAT"}
+    if "cpat" in scores:
+        threshold_notes["cpat"] = (
+            "pretrained human CPAT model (cpat/data/Human_Hexamer.tsv, Human_logitModel.RData), "
+            "published human cutoff 0.364; not retrained, not tuned on the test set"
+            if thresholds["cpat"] == DEFAULT_THRESHOLDS["cpat"] else
+            f"cutoff {thresholds['cpat']} set with --cpat_threshold (default is the published 0.364)")
     prov = dict(
         created=datetime.datetime.now().isoformat(timespec="seconds"),
         id_list=dict(path=args.id_list, sha256_16=sha256_short(args.id_list)) if args.id_list else None,
@@ -651,6 +658,7 @@ def main():
         ci="gene-clustered percentile bootstrap",
         n_bootstrap=args.n_bootstrap, seed=args.seed,
         thresholds=thresholds,
+        threshold_notes=threshold_notes,
         files={k: dict(path=v, sha256_16=sha256_short(v))
                for k, v in list(file_args.items()) + [("test_lnc_fasta", args.test_lnc_fasta),
                                                        ("test_pc_fasta", args.test_pc_fasta)]
