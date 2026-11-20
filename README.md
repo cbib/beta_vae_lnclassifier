@@ -229,7 +229,7 @@ Run the whole pipeline for one experiment with:
 bash scripts/layers.sh <experiment_dir> --config configs/<config>.json
 ```
 
-Stages (1.1–1.4 including 1.2b input ablation, 2.1, 3.1–3.5, S.1–S.2) write to `<experiment_dir>/interpretability/`
+Stages (1.1–1.4 including 1.2b input ablation, 2.1, 3.1–3.5, S.1) write to `<experiment_dir>/interpretability/`
 and are resumable via `.done` markers keyed on the command signature.
 `--force` reruns everything, `--only <ids>` selects stages, `--dry-run` prints
 the plan. See `analysis/pattern/README.md` for script-by-script usage.

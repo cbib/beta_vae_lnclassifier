@@ -31,7 +31,7 @@
 #   1.2b input-level ablation (zero/mean/permute; also runs on feature-only models)
 #   2.1 Frechet          (per release, shared across experiments of that release)
 #   3.1 patching matched 3.2 patching controls  3.3 joint search  3.4 joint controls
-#   3.5 interventional results  S.1 / S.2 synthesis figures
+#   3.5 interventional results  S.1 synthesis figure
 
 set -euo pipefail
 
@@ -224,9 +224,5 @@ stage S.1 "main interpretability figure (layers 1-3)" \
     --pattern_residual_csv "$PROBE/cross_fold_pattern_residual.csv" \
     --patching_csv "$PATCH/all_folds_patching.csv" --greedy_all_folds "$GREEDY" \
     --output_dir "$FIG" --release "v$REL"
-
-stage S.2 "patching symmetry figures" \
-  python -m analysis.pattern.plot_patching_symmetry --patching_csv "$PATCH/patching_summary.csv" \
-    --output_dir "$FIG" --release "v$REL" --display_names --top_n_single 6
 
 (( DRY )) && echo "dry run only: nothing executed" || echo "requested stages finished; results: $OUT/g${REL}_results.txt  figures: $FIG"

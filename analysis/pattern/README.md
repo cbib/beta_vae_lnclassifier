@@ -62,10 +62,10 @@ Training (main_subgroup.py)
       paper's main text under a page-limit constraint — carries the full
       Layer 1/2/3 argument in one figure.
     ↓
-plot_patching_symmetry.py                      (supplementary patching figures)
-    • Symmetry-score bar chart, symmetry-vs-IIA comparison, sufficiency
-      curve, optional cross-release IIA comparison — each also usable
-      standalone for slides/appendix figures outside the main-text panel.
+python -m analysis.figures --only patching    (supplementary patching figures)
+    • patching_sufficiency: IIA from single subgroup to block to all tokens.
+    • patching_controls: matched patching against the shuffled-partner, same-class
+      and noise controls (symmetry and IIA per scope), plus the joint-set controls.
 ```
 
 Steps 1–7 write CSV + NPZ outputs; step 8 and the standalone patching plot
@@ -211,30 +211,8 @@ convention (internal `TE_*` keys) — the figure always renders `TE_*` as
 `REP_*` in labels, unconditionally (no `--display_names` flag here, unlike
 the other plotting scripts).
 
-For standalone supplementary/appendix figures instead of the consolidated
-panel:
-
-```bash
-python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
-    --output_dir   gencode_v49_experiments/benchmark_comparison \
-    --release      v49 \
-    --display_names \
-    --top_n_single 6
-```
-
-Produces, from one call: the symmetry-score bar chart, the symmetry-vs-IIA
-comparison, and (if the input CSV has block/all scopes) the sufficiency
-curve. For a cross-release comparison, add a second release's summary:
-
-```bash
-python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
-    --patching_csv2 gencode_v47_experiments/beta_vae_subgroup_base_g47/patching/patching_summary.csv \
-    --release       v49 --release2 v47 \
-    --output_dir    gencode_v49_experiments/benchmark_comparison \
-    --display_names
-```
+The supplement figures (sufficiency curve and the control experiments) are rendered by
+`python -m analysis.figures --only patching`, not by a plotting script here.
 
 ---
 
@@ -287,7 +265,7 @@ Reported per direction and as an overall mean (`iia_overall`). A subgroup
 can show a nonzero symmetry score (partial shift) with near-zero IIA
 (rarely changes the actual decision) — the two metrics answer different
 questions: "does this move the needle" vs. "does this change the verdict."
-`symmetry_vs_iia_{release}.png` makes this divergence visible directly.
+Panel B of the main figure shows this divergence directly.
 
 **Joint-search independence null** — for a searched token set $S$, the
 independence-null IIA is:
@@ -360,10 +338,6 @@ joint_patching/
   joint_patching_topk_summary.csv
 
 benchmark_comparison/
-  patching_symmetry_bar_{release}.png / .pdf
-  symmetry_vs_iia_{release}.png / .pdf
-  sufficiency_curve_{release}.png / .pdf
-  cross_release_iia_{release_a}_vs_{release_b}.png / .pdf   (if --patching_csv2 given)
   interpretability_main_{release}.png / .pdf                 (plot_interpretability_main.py,
                                                               main-text 3-panel figure)
 ```
