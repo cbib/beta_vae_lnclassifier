@@ -14,7 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from . import benchmark_supplement, benchmark_table, dataset_composition, frechet, patching, interpretability_main, style  # noqa: E402
+from . import benchmark_supplement, benchmark_table, dataset_composition, frechet, patching, ablations, interpretability_main, style  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -49,6 +49,10 @@ def _patching(a):
     _need(a, "exp_dir")
     return patching.build(a.exp_dir, a.out)
 
+def _ablations(a):
+    _need(a, "exp_dir")
+    return ablations.build(a.exp_dir, a.out)
+
 def _interpretability_main(a):
     _need(a, "exp_dir")
     return interpretability_main.build(a.exp_dir, a.out)
@@ -58,7 +62,7 @@ def _interpretability_main(a):
 # name -> function(args) returning (input paths, output paths)
 FIGURES = {"benchmark_table": _benchmark_table, "benchmark_supplement": _benchmark_supplement,
            "dataset_composition": _dataset_composition, "frechet": _frechet, 
-           "patching": _patching, "interpretability_main": _interpretability_main}
+           "patching": _patching, "ablations": _ablations, "interpretability_main": _interpretability_main}
 
 
 def sha256(path):
