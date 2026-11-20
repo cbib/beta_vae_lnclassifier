@@ -299,10 +299,15 @@ Used zero-shot (pretrained weights, no fine-tuning).
 
 ```bash
 git clone https://github.com/luukromeijn/lncRNA-Py
+cp -r lncRNA-Py/lncrnapy .          # the package, run from the repository root (git-ignored)
 conda env create -f lncrnabert_environment.yml
-conda activate lncrnabert_env
-pip install -e lncRNA-Py/
+conda activate lncrnabert
+python -c "import lncrnapy"         # check, from the repository root
 ```
+
+lncRNA-Py has no `setup.py`, so it is not pip-installable. Instead of copying the package, you can
+leave it in the clone and pass `--workdir lncRNA-Py` to `scripts/run_lncrnabert.sh`
+(`--lncrnabert_workdir` to `analysis/benchmark/run_benchmark_tools.sh`).
 
 ```bash
 bash scripts/run_lncrnabert.sh      # usage in the script header
