@@ -38,11 +38,6 @@ GENCODE v47 and v49 held-out test sets.
     • 95% bootstrap CI on F1 (10,000 resamples) and 95% DeLong CI on AUC,
       per method — the point estimates from step 2 with confidence intervals
     • Writes benchmark_table_with_ci.csv
-    ↓
-[3] upset_benchmark.py
-    • UpSet plot of hard-case intersections across all methods
-    • Reveals whether hard cases are shared (biological ambiguity) or
-      method-specific (model failure)
 ```
 
 Stage 1 is a full benchmark tool run and can take a long time (each
@@ -131,6 +126,4 @@ benchmark_comparison/
                                    f1, f1_ci_low, f1_ci_high, auc, auc_ci_low, auc_ci_high
   predictions_merged.csv           per-transcript predictions across all methods
   hard_case_summary.csv
-  upset_hard_cases[_error_only].png
-  upset_blnc_advantage[_error_only].png
 ```

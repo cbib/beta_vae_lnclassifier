@@ -25,7 +25,7 @@ SPLIT_SEED=${SPLIT_SEED:-42}
 export GENCODE_VERSION
 
 # Create directories
-mkdir -p data/{raw,cdhit,processed,processed/sanity_check}
+mkdir -p data/{raw,cdhit_clusters,processed,processed/sanity_check}
 mkdir -p figures
 mkdir -p logs
 
@@ -45,15 +45,14 @@ bash 02_filter_gene_biotypes.sh
 echo ""
 
 # Step 3: CD-HIT clustering
-echo "[Step 3/6] Submitting CD-HIT clustering job..."
-JOB_ID=$(bash 03_run_cdhit.sh)
-echo "CD-HIT job submitted: ${JOB_ID}"
+echo "[Step 3/6] Submitting the CD-HIT clustering jobs..."
+(cd "$PROJECT_ROOT" && sbatch scripts/run_lnc_cdhit.sh && sbatch scripts/run_pc_cdhit.sh)
 echo "Waiting for CD-HIT to complete..."
 echo "(This may take 2-6 hours depending on cluster load)"
 echo ""
 echo "You can monitor progress with:"
 echo "  squeue -u \$USER"
-echo "  tail -f logs/v49_cdhit_*.log"
+echo "  tail -f logs/v49_lnc_cdhit.log logs/v49_pc_cdhit.log"
 echo ""
 echo "Once CD-HIT completes, run:"
 echo "  bash 04_filter_to_cdhit.sh"
@@ -67,7 +66,7 @@ exit 0
 # Uncomment below to run automatically (requires CD-HIT to finish)
 
 # Wait for CD-HIT to complete
-while squeue -u $USER | grep -q "v49_cdhit"; do
+while squeue -u $USER | grep -q "_cdhit"; do
     sleep 60
 done
 
@@ -90,8 +89,8 @@ echo ""
 if [ "${DO_SPLIT}" = "1" ]; then
     echo "[Step 7/7] Creating train/val and test split..."
     python "${PROJECT_ROOT}/analysis/prepare_gencode/scripts/split_test_set.py" \
-        --lnc_fasta data/cdhit/lnc_clustered.fa \
-        --pc_fasta  data/cdhit/pc_clustered.fa \
+        --lnc_fasta data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa \
+        --pc_fasta  data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa \
         --output_dir data/splits/ \
         --test_size ${TEST_SIZE} \
         --seed ${SPLIT_SEED}
@@ -100,8 +99,8 @@ else
     echo "[Step 7/7] Skipping split (DO_SPLIT not set)"
     echo "  To create a train/val + test split, run:"
     echo "  python analysis/prepare_gencode/scripts/split_test_set.py \\"
-    echo "    --lnc_fasta data/cdhit/lnc_clustered.fa \\"
-    echo "    --pc_fasta  data/cdhit/pc_clustered.fa \\"
+    echo "    --lnc_fasta data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa \\"
+    echo "    --pc_fasta  data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa \\"
     echo "    --output_dir data/splits/"
     echo ""
 fi
@@ -112,8 +111,8 @@ fi
 # echo "End time: $(date)"
 # echo ""
 # echo "Output files:"
-# echo "  - data/cdhit/lnc_clustered.fa"
-# echo "  - data/cdhit/pc_clustered.fa"
+# echo "  - data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa"
+# echo "  - data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa"
 # echo "  - data/processed/gencode49_dataset_biotypes_cdhit90.csv"
 # echo "  - figures/dataset_distribution.png"
 # echo "  - data/processed/sanity_check/sanity_check_report.txt"

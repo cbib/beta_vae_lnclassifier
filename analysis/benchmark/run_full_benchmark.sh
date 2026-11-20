@@ -3,7 +3,7 @@
 # run_full_benchmark.sh
 #
 # End-to-end orchestration: run_benchmark_tools.sh → compare_models.py →
-# plot_upset_benchmark.py, for one GENCODE release.
+# compute_benchmark_ci.py → ensemble_vs_models.py, for one GENCODE release.
 #
 # Each method is toggled with a true/false flag. The script derives all
 # standard paths from --release and --base_dir, and only passes arguments
@@ -31,8 +31,6 @@
 #     [--use_lncrnabert    true]  \
 #     [--common_subset     true]  \
 #     [--hard_def          file|error] \
-#     [--error_only] \
-#     [--min_set_size 5] \
 #     [--orthrus_env  ${HOME}/.conda/envs/orthrus] \
 #     [--rnasamba_sif rnasamba.sif] \
 #     [--max_length   15000] \
@@ -49,7 +47,7 @@
 #   metrics computed) but --blnc_predictions is still required since
 #   compare_models.py needs it for ground-truth labels.
 # - Methods with use_*=false are skipped entirely in run_benchmark_tools.sh
-#   (via --skip_*) AND excluded from the compare_models.py / upset arguments,
+#   (via --skip_*) AND excluded from the compare_models.py arguments,
 #   even if their output files already exist from a previous run.
 # =============================================================================
 
@@ -75,7 +73,7 @@ USE_ENSEMBLE_VS_MODELS=true
 REQUIRE_GENE_DISJOINT=true
 # true: tables score every method on the transcripts all methods returned
 COMMON_SUBSET=true
-# hard case definition for compare_models/UpSet: file (per-method flag) or error (misclassified, same for all)
+# hard case definition for compare_models: file (per-method flag) or error (misclassified, same for all)
 HARD_DEF="file"
 # reuse existing tool outputs (skip Stage 1); override comparison output dir
 SKIP_TOOLS=false
@@ -110,9 +108,7 @@ UNSEEN_CUTOFF=46
 UNSEEN_CACHE="gencode_release_index"
 LOCAL_GTF_DIR=""
 
-# compare_models / upset options
-ERROR_ONLY=false
-MIN_SET_SIZE=6
+# compare_models options
 CPAT_THRESHOLD=""
 CPC2_THRESHOLD=""
 
@@ -161,8 +157,6 @@ while [[ $# -gt 0 ]]; do
         --unseen_cache)       UNSEEN_CACHE="$2";       shift 2 ;;
         --local_gtf_dir)      LOCAL_GTF_DIR="$2";      shift 2 ;;
 
-        --error_only)         ERROR_ONLY=true;         shift 1 ;;
-        --min_set_size)       MIN_SET_SIZE="$2";       shift 2 ;;
         --cpat_threshold)     CPAT_THRESHOLD="$2";     shift 2 ;;
         --cpc2_threshold)     CPC2_THRESHOLD="$2";     shift 2 ;;
 
@@ -244,7 +238,7 @@ done
 # =============================================================================
 # Stage 1 — run_benchmark_tools.sh
 # =============================================================================
-log_section "Stage 1/3 — run_benchmark_tools.sh"
+log_section "Stage 1 — run_benchmark_tools.sh"
 
 TOOLS_ARGS=(
     --lnc_fasta   "$LNC_FASTA"
@@ -288,7 +282,7 @@ fi
 # =============================================================================
 # Stage 2 — compare_models.py
 # =============================================================================
-log_section "Stage 2/3 — compare_models.py"
+log_section "Stage 2 — compare_models.py"
 
 COMPARE_ARGS=(
     --blnc_csv   "$BLNC_PREDICTIONS"
@@ -361,14 +355,14 @@ python "${SCRIPT_DIR}/compare_models.py" "${CM_ARGS[@]}" 2>&1 | tee -a "$LOG_FIL
 
 PREDICTIONS_MERGED="${COMPARISON_DIR}/predictions_merged.csv"
 if [[ ! -f "$PREDICTIONS_MERGED" ]]; then
-    log "ERROR: ${PREDICTIONS_MERGED} not produced — aborting before upset plots"
+    log "ERROR: ${PREDICTIONS_MERGED} not produced — aborting"
     exit 1
 fi
 
 # =============================================================================
 # Stage 2.5 — compute_benchmark_ci.py
 # =============================================================================
-log_section "Stage 2.5/3 — compute_benchmark_ci.py"
+log_section "Stage 2.5 — compute_benchmark_ci.py"
 
 CI_ARGS=("${COMPARE_ARGS[@]}" --test_lnc_fasta "$LNC_FASTA" --test_pc_fasta "$PC_FASTA" --n_bootstrap 10000)
 [[ "$COMMON_SUBSET" == "true" ]] && CI_ARGS+=(--common_subset)
@@ -379,7 +373,7 @@ python "${SCRIPT_DIR}/compute_benchmark_ci.py" "${CI_ARGS[@]}" 2>&1 | tee -a "$L
 # Stage 2.6 — ensemble_vs_models.py (fold models vs ensemble vs zero-shot lncRNA-BERT)
 # =============================================================================
 if [[ "$USE_ENSEMBLE_VS_MODELS" == "true" ]]; then
-    log_section "Stage 2.6/3 — ensemble_vs_models.py"
+    log_section "Stage 2.6 — ensemble_vs_models.py"
     [[ -z "$FOLD_PROBS" ]] && FOLD_PROBS="$(dirname "$BLNC_PREDICTIONS")/test_fold_probs.csv"
     if [[ ! -f "$FOLD_PROBS" ]]; then
         log "  WARNING: ${FOLD_PROBS} not found — skipping ensemble_vs_models"
@@ -396,36 +390,6 @@ if [[ "$USE_ENSEMBLE_VS_MODELS" == "true" ]]; then
 fi
 
 # =============================================================================
-# Stage 3 — upset_benchmark.py
-# =============================================================================
-log_section "Stage 3/3 — upset_benchmark.py"
-
-UPSET_ARGS=(
-    --predictions_csv "$PREDICTIONS_MERGED"
-    --output_dir      "$COMPARISON_DIR"
-    --min_set_size    "$MIN_SET_SIZE"
-)
-
-if $ERROR_ONLY; then
-    UPSET_ARGS+=(--error_only --blnc_csv "$BLNC_PREDICTIONS")
-fi
-
-log "Command: python ${SCRIPT_DIR}/upset_benchmark.py ${UPSET_ARGS[*]}"
-python "${SCRIPT_DIR}/upset_benchmark.py" "${UPSET_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
-
-# =============================================================================
-# Stage 4 — seen/unseen benchmark (B2, B3), optional
-# =============================================================================
-if [[ "$RUN_UNSEEN" == "true" ]]; then
-    log_section "Stage 4 — run_unseen_benchmark.sh"
-    UNSEEN_ARGS=(--comparison_dir "$COMPARISON_DIR" --release "${RELEASE#v}"
-                 --cutoff "$UNSEEN_CUTOFF" --cache_dir "$UNSEEN_CACHE")
-    [[ -n "$LOCAL_GTF_DIR" ]] && UNSEEN_ARGS+=(--local_gtf_dir "$LOCAL_GTF_DIR")
-    log "Command: bash ${SCRIPT_DIR}/run_unseen_benchmark.sh ${UNSEEN_ARGS[*]}"
-    bash "${SCRIPT_DIR}/run_unseen_benchmark.sh" "${UNSEEN_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
-fi
-
-# =============================================================================
 # Summary
 # =============================================================================
 log_section "Done — GENCODE ${RELEASE}"
@@ -434,10 +398,6 @@ log "Merged predictions  : ${PREDICTIONS_MERGED}"
 log "Ensemble vs models  : ${COMPARISON_DIR}/ensemble_vs_models_f1.csv, ..._diffs.csv"
 log "Provenance          : ${COMPARISON_DIR}/benchmark_provenance.json"
 log "Hard case summary   : ${COMPARISON_DIR}/hard_case_summary*.csv"
-SUFFIX=""
-$ERROR_ONLY && SUFFIX="_error_only"
-log "UpSet plots         : ${COMPARISON_DIR}/upset_hard_cases${SUFFIX}.png"
-log "                      ${COMPARISON_DIR}/upset_blnc_advantage${SUFFIX}.png"
 log ""
 [[ "$RUN_UNSEEN" == "true" ]] && log "Seen/unseen         : ${BASE_DIR}/benchmark_unseen_v${UNSEEN_CUTOFF}, ${BASE_DIR}/benchmark_seen_v${UNSEEN_CUTOFF}"
 log "Full log: ${LOG_FILE}"

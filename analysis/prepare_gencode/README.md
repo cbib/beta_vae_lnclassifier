@@ -11,7 +11,7 @@ bash run_all.sh
 bash 00_download_gencode.sh
 bash 01_extract_biotypes.sh
 bash 02_filter_gene_biotypes.sh
-bash 03_run_cdhit.sh          # Submit to SLURM or
+sbatch ../../scripts/run_lnc_cdhit.sh && sbatch ../../scripts/run_pc_cdhit.sh   # SLURM; or run from the repo root
 bash 04_filter_to_cdhit.sh
 bash 05_create_visualizations.sh
 bash 06_sanity_check.sh
@@ -97,27 +97,23 @@ conda activate cdhit_env
 cd-hit-est -h
 ```
 
-**Run clustering**:
+**Run clustering** (from the repo root; one SLURM job per class, they can run at the same time):
 ```bash
-# With default settings (16 CPUs)
-bash 03_run_cdhit.sh
-
-# Or specify number of CPUs
-CDHIT_CPUS=32 bash 03_run_cdhit.sh
+sbatch scripts/run_lnc_cdhit.sh
+sbatch scripts/run_pc_cdhit.sh
 ```
 
 **Parameters**:
 - Identity threshold: 90% (`-c 0.9`)
 - Alignment coverage: 80% of shorter sequence (`-aS 0.8`)
 - Word size: 8 (`-n 8`)
-- Greedy mode: enabled (`-g 1`) for speed
+- Fast greedy mode (`-g 0`), band width 20 (`-b 20`), length-difference cutoff 0.9 (`-s 0.9`)
 
 **Output**:
-- `data/cdhit_clusters/lnc_clustered.fa` (~160k sequences)
-- `data/cdhit_clusters/g47_pc_clustered.fa` (~145k sequences)
+- `data/cdhit_clusters/g49_lncRNA_clustered.fa` (~160k sequences)
+- `data/cdhit_clusters/g49_pc_clustered.fa` (~145k sequences)
 - `data/cdhit_clusters/*.clstr` (cluster information)
-- `logs/cdhit_lnc.log` (lncRNA clustering log)
-- `logs/cdhit_pc.log` (PC clustering log)
+- `logs/v49_lnc_cdhit.log`, `logs/v49_pc_cdhit.log` (SLURM logs)
 
 **Note**: PC takes longer due to longer sequences (max ~109kb vs ~50kb for lncRNA)
 
@@ -178,10 +174,10 @@ data/
 │   ├── gencode.v49.lncRNA_transcripts.fa
 │   └── gencode.v49.pc_transcripts.fa
 ├── cdhit_clusters/                                  # CD-HIT output
-│   ├── lnc_clustered.fa
-│   ├── lnc_clustered.fa.clstr
-│   ├── pc_clustered.fa
-│   └── pc_clustered.fa.clstr
+│   ├── g49_lncRNA_clustered.fa
+│   ├── g49_lncRNA_clustered.fa.clstr
+│   ├── g49_pc_clustered.fa
+│   └── g49_pc_clustered.fa.clstr
 └── processed/                              # Final dataset
     ├── g49_dataset_biotypes_cdhit.csv
     └── sanity_check/
@@ -204,7 +200,7 @@ GENCODE_VERSION=49 bash run_all.sh
 
 ### Different CD-HIT Threshold
 ```bash
-# Edit 03_run_cdhit.sh
+# Edit scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh
 cd-hit-est \
     -c 0.95 \  # Change from 0.9 to 0.95 for 95% identity
     # ... rest of params
@@ -212,9 +208,9 @@ cd-hit-est \
 
 ### Local Execution (no SLURM)
 ```bash
-# Edit 03_run_cdhit.sh - remove SBATCH directives
-# Run directly:
-bash 03_run_cdhit.sh
+# Edit scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh - remove the SBATCH directives
+# and set -T by hand; then run them with bash from the repo root:
+bash scripts/run_lnc_cdhit.sh
 ```
 
 ## Troubleshooting
@@ -228,7 +224,7 @@ cd-hit-est -h
 
 ### Memory issues during CD-HIT
 ```bash
-# Increase memory limit in 03_run_cdhit.sh
+# Increase memory limit in scripts/run_pc_cdhit.sh
 #SBATCH --mem=128G  # Increase from 64G
 # You can also increase cpus per thread
 #SBATCH --cpus-per-task=16
@@ -237,7 +233,7 @@ cd-hit-est -h
 ### Biotype matching failures
 ```bash
 # Check transcript ID format matches between FASTA and CSV
-head -1 data/cdhit/lnc_clustered.fa
+head -1 data/cdhit_clusters/g49_lncRNA_clustered.fa
 head -2 data/processed/gencode49_dataset_biotypes.csv
 ```
 

@@ -9,7 +9,7 @@
 
 # PC clustering only
 
-OUTPUT_DIR="data/g49_cdhit_clusters"
+OUTPUT_DIR="data/cdhit_clusters"
 mkdir -p ${OUTPUT_DIR}
 mkdir -p logs
 

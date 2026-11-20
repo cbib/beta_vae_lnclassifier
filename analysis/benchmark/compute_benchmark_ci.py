@@ -35,7 +35,7 @@ Per-method score conventions (probability of the POSITIVE class, pc/mRNA)
 Pipeline integration (run_full_benchmark.sh)
 ---------------------------------------------
 Intended to be called as Stage 2.5, immediately after compare_models.py and
-before upset_benchmark.py, with the SAME COMPARE_ARGS-derived file paths
+before ensemble_vs_models.py, with the SAME COMPARE_ARGS-derived file paths
 already assembled by that stage's per-method [[ -f ... ]] checks — i.e. the
 shell script only needs to pass this script whichever --*_csv/--*_tsv flags
 it already decided to pass to compare_models.py, unchanged.

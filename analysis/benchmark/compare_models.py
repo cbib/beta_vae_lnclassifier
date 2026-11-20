@@ -9,10 +9,7 @@ test set.
 Produces:
   benchmark_table.csv          — accuracy / precision / recall / F1 per method
   predictions_merged.csv       — per-sample predictions from all methods joined
-  hard_case_summary.csv        — per-method hard case counts (for upset plot)
-
-The UpSet plot analysis (intersection structure across methods) is handled
-separately by plot_upset_benchmark.py, which reads predictions_merged.csv.
+  hard_case_summary.csv        — per-method hard case counts
 
 Tool output format notes
 ------------------------
@@ -396,7 +393,7 @@ def main():
         print(f"  {name:<28} n={row['n_samples']:,}  "
               f"acc={row['accuracy']:.4f}  f1={row['f1_macro']:.4f}")
 
-        # Derive is_hard flag for upset plot
+        # Derive the per-method is_hard flag
         col_name = flag_col or (name.lower()
                                 .replace(" ", "_")
                                 .replace("(", "").replace(")", "")
@@ -527,7 +524,7 @@ def main():
         output_dir / "hard_case_summary.csv", index=False
     )
 
-    # ── Save merged predictions (input for upset plot) ────────────────────────
+    # ── Save merged predictions ────────────────────────
     # NaN hard flag = method had no prediction for that transcript. Without
     # --common_subset these are filled with False (counted as "easy"), which
     # biases the hard-for-all / easy-for-all counts; use --common_subset.
@@ -539,8 +536,7 @@ def main():
     merged_df[hard_cols] = merged_df[hard_cols].fillna(False)
 
     merged_df.to_csv(output_dir / "predictions_merged.csv", index=False)
-    print(f"\n  predictions_merged.csv  → {output_dir}"
-          f"  (use with plot_upset_benchmark.py)")
+    print(f"\n  predictions_merged.csv  → {output_dir}")
     print(f"  hard_case_summary.csv   → {output_dir}")
 
     print("\nDone.")

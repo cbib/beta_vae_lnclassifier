@@ -8,7 +8,7 @@
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #
-# Gene-grouped benchmark for one release (tools + CIs + ensemble_vs_models + UpSet).
+# Gene-grouped benchmark for one release (tools + CIs + ensemble_vs_models).
 #
 #   sbatch scripts/benchmark_job.sh --release 47 \
 #       --exp_dir gencode_v47_experiments/<experiment> --evaluate
