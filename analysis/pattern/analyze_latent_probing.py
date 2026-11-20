@@ -74,7 +74,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # ---------------------------------------------------------------------------
-# Block colour palette (shared convention with analyze_mstar.py)
+# Block colour palette
 # ---------------------------------------------------------------------------
 
 BLOCK_COLORS = {

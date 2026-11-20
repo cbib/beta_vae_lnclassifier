@@ -20,11 +20,11 @@ Training (main_subgroup.py)
     • Forward pass with hooks on fc_mu (z) and token_norm (feature tokens)
     • Save fold_N_repr.npz: z, tokens, labels, lengths, gc_content, token_names, block_names
     ↓
-[2] analyze_mstar.py                          (associational layer, pre-training)
-    • M* (scalar SNR) and Fréchet distance decomposition per subgroup
-    • Mean term vs covariance term — reveals distributional suppressor candidates
-    • Optional: --pattern_raw_csv also produces frechet_vs_pattern.png, flagging
-      subgroups the associational layer catches that naive pattern alignment misses
+[2] analyze_frechet.py                        (associational layer, pre-training)
+    • Fréchet distance per subgroup, split into mean term and covariance term —
+      reveals distributional suppressor candidates
+    • Writes frechet_ranking.csv and within_class_covariance_{lncrna,mrna}.csv;
+      the figures are python -m analysis.figures --only frechet
     ↓
 [3] analyze_latent_probing.py                 (diagnostics layer)
     Stage 1 — probe z for length / GC / class confounds
@@ -85,17 +85,17 @@ python analysis/pattern/extract_representations.py \
     --device         cuda:0
 ```
 
-### Step 2 — Fréchet / M* decomposition (associational layer)
+### Step 2 — Fréchet distance (associational layer)
 
 ```bash
-python analysis/pattern/analyze_mstar.py \
+python -m analysis.pattern.analyze_frechet \
     --config       configs/beta_vae_subgroup_base_g49.json \
-    --output_dir   gencode_v49_experiments/mstar_analysis \
-    --pattern_raw_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv
+    --output_dir   gencode_v49_experiments/frechet_analysis
 ```
 
-`--pattern_raw_csv` is optional — omit it to skip `frechet_vs_pattern.png`
-(requires step 3 to have run first, since it reads that step's output).
+Writes `frechet_ranking.csv` and the two `within_class_covariance_*.csv` tables. The supplement
+figures (Fréchet against the pattern alignment of step 3, and the within-class covariance) are
+rendered by `python -m analysis.figures`.
 
 ### Step 3 — Latent probing + pattern analysis (model-functional layer)
 
@@ -196,7 +196,7 @@ since block membership constrains which subgroups can be patched together.
 
 ```bash
 python analysis/pattern/plot_interpretability_main.py \
-    --frechet_csv          gencode_v49_experiments/mstar_analysis/frechet_ranking.csv \
+    --frechet_csv          gencode_v49_experiments/frechet_analysis/frechet_ranking.csv \
     --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation/analysis/all_folds_ablation.csv \
     --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv \
     --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_residual.csv \
@@ -260,7 +260,7 @@ related.
 
 $$FD^2 = \underbrace{\|\mu_1-\mu_2\|_2^2}_{\text{mean term}}  +  \underbrace{\text{Tr}\left(\Sigma_1+\Sigma_2-2(\Sigma_1\Sigma_2)^{1/2}\right)}_{\text{covariance term}}$$
 
-Unlike scalar SNR/M*, this captures class-conditional covariance
+Unlike a comparison of class means, this captures class-conditional covariance
 differences — the source of signal for distributional suppressor
 candidates such as REP_CORE, which score near zero on scalar metrics but
 rank highly by total FD.
@@ -317,9 +317,9 @@ figure labels only — do not rename the internal keys.
 representations/
   fold_N_repr.npz            z, tokens, labels, token_names, block_names, ...
 
-mstar_analysis/
-  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction
-  frechet_vs_pattern.png     (only if --pattern_raw_csv given)
+frechet_analysis/
+  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction, fd_status
+  within_class_covariance_lncrna.csv, within_class_covariance_mrna.csv   subgroup x subgroup
 
 latent_probing/
   fold_N/

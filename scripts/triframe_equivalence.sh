@@ -42,7 +42,7 @@ EXP49=gencode_v49_experiments/beta_vae_subgroup_base_g49
 compare() {
   local tag="$1" exp="${2%/}" cfg="$3"
   local interp="$exp/interpretability"
-  local mstar="$(dirname "$exp")/mstar_analysis"
+  local frechet="$(dirname "$exp")/frechet_analysis"
   local args=(--experiment_dir "$exp" --config "$cfg"
               --folds all --output_dir "analysis/triframe/reports/${tag}${suffix}")
   if has 1; then
@@ -53,7 +53,7 @@ compare() {
            --num_workers 2 --forward_batch_size 128)
   fi
   if has 2; then
-    args+=(--frechet_reference "$mstar/frechet_ranking.csv"
+    args+=(--frechet_reference "$frechet/frechet_ranking.csv"
            --frechet_rtol 1e-6 --frechet_atol 1e-8)
   fi
   if has 3; then

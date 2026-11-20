@@ -81,7 +81,7 @@ plt.rcParams["figure.dpi"] = 100
 
 
 # ---------------------------------------------------------------------------
-# Block colour palette (shared convention with analyze_mstar.py / latent probing)
+# Block colour palette (shared convention with latent probing)
 # ---------------------------------------------------------------------------
 
 BLOCK_COLORS = {

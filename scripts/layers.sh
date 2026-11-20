@@ -29,7 +29,7 @@
 # Stage ids (layer numbering as in the manuscript)
 #   1.1 representations  1.2 subgroup ablation  1.3 residual ablation  1.4 latent probing
 #   1.2b input-level ablation (zero/mean/permute; also runs on feature-only models)
-#   2.1 M*/Frechet       (per release, shared across experiments of that release)
+#   2.1 Frechet          (per release, shared across experiments of that release)
 #   3.1 patching matched 3.2 patching controls  3.3 joint search  3.4 joint controls
 #   3.5 interventional results  S.1 / S.2 synthesis figures
 
@@ -86,7 +86,7 @@ PCTRL="$OUT/3.2_patching_controls"
 JOINT="$OUT/3.3_joint_search"
 JCTRL="$OUT/3.4_joint_controls"
 FIG="$OUT/figures"
-MSTAR="$(dirname "$EXP")/mstar_analysis"
+FRECHET="$(dirname "$EXP")/frechet_analysis"
 DONE="$OUT/.done"; LOGS="$OUT/logs"
 GREEDY="$JOINT/joint_patching_greedy_all_folds.csv"
 
@@ -116,7 +116,7 @@ if [[ "$GBG" != "True" ]]; then
   echo "WARNING: group_by_gene is $GBG: results are on gene-leaky folds" >&2
 fi
 echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG feature_only=$FEATONLY"
-echo "out=$OUT  mstar=$MSTAR"
+echo "out=$OUT  frechet=$FRECHET"
 
 if (( ! DRY )); then
   mkdir -p "$DONE" "$LOGS" "$FIG"
@@ -184,11 +184,9 @@ stage 1.4 "latent probing + pattern alignment" \
     --model_label "β-LNC" --gencode_version "v$REL" --n_permutations "$N_PERMUTATIONS"
 
 # ---------------------------------------------------------------- Layer 2
-# Uses the trainval FASTAs/features named in the config; model-independent except
-# for the optional pattern-alignment comparison plot (needs 1.4).
-stage 2.1 "M* / Frechet decomposition" \
-  python -m analysis.pattern.analyze_mstar --config "$CFG" --output_dir "$MSTAR" \
-    --pattern_raw_csv "$PROBE/cross_fold_pattern_raw.csv"
+# Uses the trainval FASTAs/features named in the config; model-independent.
+stage 2.1 "Frechet distance" \
+  python -m analysis.pattern.analyze_frechet --config "$CFG" --output_dir "$FRECHET"
 
 # ---------------------------------------------------------------- Layer 3
 stage 3.1 "patching: matched (single, block, all) + shuffled" \
@@ -216,12 +214,12 @@ stage 3.5 "collect interventional results" \
     --log "$LOGS/3.4.log" --out "$OUT/g${REL}_results.txt"
 
 # ---------------------------------------------------------------- synthesis
-need S.1 "$MSTAR/frechet_ranking.csv" "$ABL/all_folds_ablation.csv" \
+need S.1 "$FRECHET/frechet_ranking.csv" "$ABL/all_folds_ablation.csv" \
      "$PROBE/cross_fold_pattern_raw.csv" "$PROBE/cross_fold_pattern_residual.csv" \
      "$PATCH/all_folds_patching.csv" "$GREEDY"
 stage S.1 "main interpretability figure (layers 1-3)" \
   python -m analysis.pattern.plot_interpretability_main \
-    --frechet_csv "$MSTAR/frechet_ranking.csv" --ablation_csv "$ABL/all_folds_ablation.csv" \
+    --frechet_csv "$FRECHET/frechet_ranking.csv" --ablation_csv "$ABL/all_folds_ablation.csv" \
     --pattern_raw_csv "$PROBE/cross_fold_pattern_raw.csv" \
     --pattern_residual_csv "$PROBE/cross_fold_pattern_residual.csv" \
     --patching_csv "$PATCH/all_folds_patching.csv" --greedy_all_folds "$GREEDY" \

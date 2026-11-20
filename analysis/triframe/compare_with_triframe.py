@@ -3,7 +3,7 @@
 Reference = released β-LNC outputs (never modified):
   --probing_dir       1.4_latent_probing/  (per-fold redundancy / pattern CSVs; Layer 1)
   --ablation_reference 1.2_ablation/all_folds_ablation.csv      (1.2 ablation, Layer 1)
-  --frechet_reference mstar_analysis/frechet_ranking.csv    (2.1 Fréchet, Layer 2)
+  --frechet_reference frechet_analysis/frechet_ranking.csv    (2.1 Fréchet, Layer 2)
   --reference         all_folds_patching.csv        (3.1 patching rows)
   --greedy_reference  joint_patching_greedy_all_folds.csv   (3.3 greedy search)
 Any subset can be given; each part is reported and gated separately.
@@ -19,9 +19,9 @@ token_zero (projector row) and feature_zero (raw columns) hooks, on each fold's
 validation set; baseline and per-token acc_drop / f1_drop vs all_folds_ablation.csv.
 
 Fréchet (Layer 2, model-independent): features/labels come from β-LNC's own
-loader (analyze_mstar.load_features, config trainval files), so only the
+loader (analyze_frechet.load_features, config trainval files), so only the
 computation is under test: triframe.layer2.frechet_by_token vs
-analyze_mstar.frechet_analysis. Per sub-group frechet_dist, mean_term, cov_term
+analyze_frechet.frechet_analysis. Per sub-group frechet_dist, mean_term, cov_term
 within rtol/atol; NaN must match NaN; same sub-groups; same ranking.
 
 Patching: every (mode, scope, direction) group of the chosen folds is re-run
@@ -38,7 +38,7 @@ Not covered: noise-control values (random vectors differ by RNG).
 Usage (repo root):
   python -m analysis.triframe.compare_with_triframe \
       --experiment_dir EXP --config CFG \
-      --frechet_reference EXP/../mstar_analysis/frechet_ranking.csv \
+      --frechet_reference EXP/../frechet_analysis/frechet_ranking.csv \
       --reference EXP/interpretability/3.1_patching/all_folds_patching.csv \
       --greedy_reference EXP/interpretability/3.3_joint_search/joint_patching_greedy_all_folds.csv \
       --folds all --max_pairs 0 --batch_size 1 --atol_logit 1e-5 \
@@ -351,7 +351,7 @@ def compare_frechet(ref, tri, rtol, atol):
 
 
 def frechet_equivalence(config, ref_csv, args, out):
-    from analysis.pattern.analyze_mstar import load_features
+    from analysis.pattern.analyze_frechet import load_features
     block_dfs, labels = load_features(config)
     block_data = {b: df.values.astype(np.float64) for b, df in block_dfs.items()}
     with warnings.catch_warnings(record=True) as caught:
@@ -608,7 +608,7 @@ def main():
     ap.add_argument("--num_workers", type=int, default=1, help="DataLoader workers (1.2)")
     ap.add_argument("--ablation_atol", type=float, default=1e-9,
                     help="accuracy/F1 are counts, so equality is expected")
-    ap.add_argument("--frechet_reference", help="mstar_analysis/frechet_ranking.csv")
+    ap.add_argument("--frechet_reference", help="frechet_analysis/frechet_ranking.csv")
     ap.add_argument("--frechet_rtol", type=float, default=1e-6)
     ap.add_argument("--frechet_atol", type=float, default=1e-8)
     ap.add_argument("--reference", help="all_folds_patching.csv")

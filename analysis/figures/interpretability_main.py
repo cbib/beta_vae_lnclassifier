@@ -32,7 +32,7 @@ def input_paths(exp_dir):
     exp = Path(exp_dir)
     out = exp / "interpretability"
     return {
-        "frechet": exp.parent / "mstar_analysis" / "frechet_ranking.csv",
+        "frechet": exp.parent / "frechet_analysis" / "frechet_ranking.csv",
         "ablation": out / "1.2_ablation" / "all_folds_ablation.csv",
         "pattern_raw": out / "1.4_latent_probing" / "cross_fold_pattern_raw.csv",
         "pattern_residual": out / "1.4_latent_probing" / "cross_fold_pattern_residual.csv",
