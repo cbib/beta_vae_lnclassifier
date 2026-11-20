@@ -14,8 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from . import benchmark_supplement, benchmark_table, interpretability_main, style  # noqa: E402
-
+from . import benchmark_supplement, benchmark_table, dataset_composition, interpretability_main, style  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -39,6 +38,9 @@ def _benchmark_supplement(a):
                                       b1.parent / f"benchmark_seen_v{cut}",
                                       b1.parent / "unseen_subset", a.out, cut)
 
+def _dataset_composition(a):
+    return dataset_composition.build(a.split_dir or f"data/split_gencode_{a.release}", a.out)
+
 def _interpretability_main(a):
     _need(a, "exp_dir")
     return interpretability_main.build(a.exp_dir, a.out)
@@ -47,7 +49,7 @@ def _interpretability_main(a):
 
 # name -> function(args) returning (input paths, output paths)
 FIGURES = {"benchmark_table": _benchmark_table, "benchmark_supplement": _benchmark_supplement,
-           "interpretability_main": _interpretability_main}
+           "dataset_composition": _dataset_composition,"interpretability_main": _interpretability_main}
 
 
 def sha256(path):
@@ -91,6 +93,7 @@ def main(argv=None):
     p.add_argument("--exp_dir", help="beta_vae_subgroup_base_gNN folder (interpretability figures)")
     p.add_argument("--benchmark_dir",
                    help="full-test benchmark folder; the unseen and seen folders are its siblings")
+    p.add_argument("--split_dir", help="split FASTA folder (default: data/split_gencode_<release>)")
     p.add_argument("--unseen_cutoff", type=int, default=46)
     p.add_argument("--out", required=True)
     p.add_argument("--only", nargs="+", choices=sorted(FIGURES), help="default: all figures")
