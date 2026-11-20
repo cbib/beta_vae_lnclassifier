@@ -54,7 +54,7 @@ Training (main_subgroup.py)
       patch jointly better than the fixed single/block/all scopes predict
       from an independence baseline? Reveals synergy the fixed scopes can't.
     ↓
-[8] plot_interpretability_main.py               (synthesis, main-text figure)
+[8] python -m analysis.figures --only interpretability_main   (synthesis, main-text figure)
     • Three-panel consolidated figure: (A) the three-layer scatter
       (Fréchet × ablation × symmetry, replaces the retired standalone
       plot_interpretability_scatter.py), (B) single-subgroup symmetry vs
@@ -68,8 +68,8 @@ python -m analysis.figures --only patching    (supplementary patching figures)
       and noise controls (symmetry and IIA per scope), plus the joint-set controls.
 ```
 
-Steps 1–7 write CSV + NPZ outputs; step 8 and the standalone patching plot
-read those outputs and produce the summary figures.
+Steps 1–7 write CSV + NPZ outputs and no figures; `python -m analysis.figures`
+reads those outputs and renders every figure of the paper and the supplement.
 
 ---
 
@@ -103,8 +103,6 @@ rendered by `python -m analysis.figures`.
 python analysis/pattern/analyze_latent_probing.py \
     --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
     --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing \
-    --model_label     "β-LNC" \
-    --gencode_version v49 \
     --n_permutations  1000
 ```
 
@@ -125,7 +123,6 @@ python analysis/pattern/analyze_subgroup_ablation.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
     --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation \
-    --gencode_version v49 \
     --device          cuda:0
 ```
 
@@ -137,7 +134,6 @@ python analysis/pattern/analyze_residual_ablation.py \
     --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
     --config          configs/beta_vae_subgroup_base_g49.json \
     --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \
-    --gencode_version v49 \
     --device          cuda:0
 ```
 
@@ -192,27 +188,20 @@ independence-null baseline per step — a searched-set IIA well above the
 null at a given set size indicates synergy the fixed scopes cannot detect,
 since block membership constrains which subgroups can be patched together.
 
-### Step 8 — Synthesis figures
+### Step 8 — Figures
 
 ```bash
-python analysis/pattern/plot_interpretability_main.py \
-    --frechet_csv          gencode_v49_experiments/frechet_analysis/frechet_ranking.csv \
-    --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation/analysis/all_folds_ablation.csv \
-    --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv \
-    --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_residual.csv \
-    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
-    --greedy_all_folds     gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching/joint_patching_greedy_all_folds.csv \
-    --output_dir           gencode_v49_experiments/benchmark_comparison \
-    --release              v49
+python -m analysis.figures --release 49 --exp_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --benchmark_dir <benchmark folder> --out figures/g49 [--only interpretability_main]
 ```
 
-All CSV inputs must share the same subgroup key
-convention (internal `TE_*` keys) — the figure always renders `TE_*` as
-`REP_*` in labels, unconditionally (no `--display_names` flag here, unlike
-the other plotting scripts).
+The main-text interpretability figure is `interpretability_main` (panel A: Fréchet, ablation and
+symmetry per subgroup, panel B: single-subgroup symmetry and IIA, panel C: greedy joint IIA).
+Internal subgroup keys stay `TE_*`; the labels read `REP_*`.
 
-The supplement figures (sufficiency curve and the control experiments) are rendered by
-`python -m analysis.figures --only patching`, not by a plotting script here.
+The supplement figures are rendered by `python -m analysis.figures`: `--only patching`
+(sufficiency curve and control experiments), `--only ablations` (the three ablations),
+`--only latent_probing` (latent probing, redundancy and pattern alignment) and `--only frechet`.
 
 ---
 
@@ -301,26 +290,22 @@ frechet_analysis/
 
 latent_probing/
   fold_N/
-    latent_probing.csv / .png
-    redundancy.csv / .png
-    pattern_raw.csv / .png
-    pattern_residual.csv / .png
-    pattern_comparison.png
+    latent_probing.csv
+    redundancy.csv
+    pattern_raw.csv
+    pattern_residual.csv
   cross_fold_latent_probing.csv
   cross_fold_redundancy.csv                  includes p_value_fisher_combined, q_value_bh, significant_fdr
   cross_fold_pattern_raw.csv
   cross_fold_pattern_residual.csv
-  cross_fold_pattern_comparison.png
   cross_fold_pattern_comparison_stats.csv    p_value_paired, q_value_bh, significant_fdr
   key_findings.txt
 
 ablation/analysis/
   all_folds_ablation.csv                     subgroup, block, mode, acc_drop, fold, ...
-  cross_fold_ablation_{mode}_stats.csv       p_value, q_value_bh, significant_fdr
 
 residual_ablation/
   all_folds_residual_ablation.csv
-  feature_vs_residual_comparison_stats.csv   p_value_paired, q_value_bh, significant_fdr
 
 patching/
   fold_N_patching.csv
@@ -338,6 +323,5 @@ joint_patching/
   joint_patching_topk_summary.csv
 
 benchmark_comparison/
-  interpretability_main_{release}.png / .pdf                 (plot_interpretability_main.py,
-                                                              main-text 3-panel figure)
+  (figures are written by python -m analysis.figures, not here)
 ```

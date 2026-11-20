@@ -15,7 +15,6 @@ Modes (applied to the sub-group's feature columns of the val set)
 
 Metrics: accuracy and macro-F1 (same definition as the benchmark tables).
 `f1_drop` is the macro-F1 drop. Mean replacement uses the val-fold column mean.
-Cross-fold stars are descriptive: the 5 folds share training data.
 Checkpoints must be numbered from 0 (fold_0_best.pt ...).
 
 Usage (repo root)
@@ -28,20 +27,14 @@ import argparse
 import inspect
 from pathlib import Path
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from scipy import stats
 from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader, Subset
 
 from data.cv_utils import get_cv_splits_from_config
-from data.feature_registry import REGISTRY, display_subgroups
-
-MODE_COLORS = {'zero': '#4A90D9', 'mean': '#F4B942', 'permute': '#9B7FD4'}
+from data.feature_registry import REGISTRY
 
 FEATURE_KEYS = ("te_genomic", "te_processed", "nonb_genomic",
                 "nonb_processed", "nonb2")
@@ -124,71 +117,6 @@ def run(model, loader, device, edit=None):
 
 def metrics(p, y):
     return accuracy_score(y, p), f1_score(y, p, average="macro", zero_division=0)
-
-
-def plot_fold(df, path, tag=''):
-    """Grouped bars of acc_drop per sub-group, one bar per mode."""
-    modes = [m for m in MODE_COLORS if m in set(df['mode'])]
-    piv = df.pivot(index='subgroup', columns='mode', values='acc_drop')
-    order = piv.mean(axis=1).sort_values(ascending=False).index
-    x, w = np.arange(len(order)), 0.8 / max(len(modes), 1)
-    fig, ax = plt.subplots(figsize=(14, 6))
-    for i, m in enumerate(modes):
-        ax.bar(x + (i - (len(modes) - 1) / 2) * w, piv.loc[order, m], w,
-               label=m, color=MODE_COLORS[m], edgecolor='black', linewidth=0.5)
-    ax.axhline(0, color='black', linewidth=1)
-    ax.set_xticks(x)
-    ax.set_xticklabels(display_subgroups(list(order)), rotation=45, ha='right')
-    ax.set_ylabel('Accuracy drop (baseline - ablated)')
-    ax.set_title(f'{tag}Input ablation per fold')
-    ax.legend()
-    ax.spines[['top', 'right']].set_visible(False)
-    plt.tight_layout(); plt.savefig(path, dpi=350, bbox_inches='tight'); plt.close()
-
-
-def plot_cross_fold(df, out_dir, tag=''):
-    """Per mode: mean +/- sd over folds, BH-FDR one-sample t-test vs 0."""
-    for mode in [m for m in MODE_COLORS if m in set(df['mode'])]:
-        piv = df[df['mode'] == mode].pivot(index='subgroup', columns='fold',
-                                           values='acc_drop')
-        mean = piv.mean(axis=1).sort_values(ascending=False)
-        std = piv.std(axis=1).reindex(mean.index)
-        p = piv.reindex(mean.index).apply(
-            lambda r: stats.ttest_1samp(r.dropna(), 0.0).pvalue
-            if r.dropna().size > 1 else np.nan, axis=1)
-        q = pd.Series(np.nan, index=p.index)
-        ok = p.notna()
-        if ok.any():
-            q[ok] = stats.false_discovery_control(p[ok].values, method='bh')
-        sig = q < 0.05
-        fig, ax = plt.subplots(figsize=(13, 5))
-        x = np.arange(len(mean))
-        ax.bar(x, mean.values, color=MODE_COLORS[mode], edgecolor='black',
-               linewidth=0.6)
-        ax.errorbar(x, mean.values, yerr=std.values, fmt='none', color='black',
-                    capsize=3)
-        yr = mean.max() - mean.min()
-        for xi, m, s_, f in zip(x, mean.values, std.values, sig.values):
-            if f:
-                ax.annotate('*', (xi, max(m, 0) + s_ + 0.06 * yr), ha='center',
-                            fontsize=14, fontweight='bold')
-        lo, hi = ax.get_ylim(); ax.set_ylim(lo, hi + 0.08 * yr)
-        ax.axhline(0, color='black', linewidth=1)
-        ax.set_xticks(x)
-        ax.set_xticklabels(display_subgroups(list(mean.index)), rotation=45,
-                           ha='right')
-        ax.set_ylabel('Mean accuracy drop (mean +/- std over folds)')
-        ax.set_title(f'{tag}Cross-fold input ablation - {mode} '
-                     f'(* q<0.05, BH-FDR; descriptive, folds not independent)')
-        ax.spines[['top', 'right']].set_visible(False)
-        plt.tight_layout()
-        plt.savefig(out_dir / f'cross_fold_input_ablation_{mode}.png',
-                    dpi=350, bbox_inches='tight'); plt.close()
-        pd.DataFrame({'subgroup': mean.index, 'mean_acc_drop': mean.values,
-                      'std_acc_drop': std.values, 'p_value': p.values,
-                      'q_value_bh': q.values, 'significant_fdr': sig.values}
-                     ).to_csv(out_dir / f'cross_fold_input_ablation_{mode}_stats.csv',
-                              index=False)
 
 
 def main():
@@ -289,14 +217,9 @@ def main():
             a.verify = False
 
         pd.DataFrame(rows).to_csv(out_dir / "all_folds_input_ablation.csv", index=False)
-        fd = out_dir / f"fold_{fold}"; fd.mkdir(exist_ok=True)
-        plot_fold(pd.DataFrame([r for r in rows if r["fold"] == fold]),
-                  fd / "input_ablation_bar.png", tag=f"fold {fold} - ")
 
     df = pd.DataFrame(rows)
     df.to_csv(out_dir / "all_folds_input_ablation.csv", index=False)
-    if df["fold"].nunique() > 1:
-        plot_cross_fold(df, out_dir)
     s = (df.groupby(["mode", "subgroup"])["acc_drop"].agg(["mean", "std"])
          .sort_values("mean", ascending=False))
     print(s.to_string())

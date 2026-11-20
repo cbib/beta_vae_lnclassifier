@@ -19,9 +19,7 @@ Usage
 python analysis/pattern/analyze_subgroup_ablation.py \
     --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config         configs/beta_vae_subgroup_base_g49.json \
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation_analysis \
-    --model_label    "β-VAE" \
-    --gencode_version v49
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation_analysis
 """
 from data.cv_utils import get_cv_splits_from_config
 
@@ -34,31 +32,10 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader, Subset
 
-from data.feature_registry import (REGISTRY, display_block,
-                                    display_subgroup, display_subgroups)
-
-sns.set_style('whitegrid')
-plt.rcParams['figure.dpi'] = 100
-
-
-# ---------------------------------------------------------------------------
-# Block colour palette (shared convention across interpretability scripts)
-# ---------------------------------------------------------------------------
-
-BLOCK_COLORS = {
-    "nonb":  "#4A90D9",
-    "te":    "#F4B942",
-    "nonb2": "#9B7FD4",
-}
-
-
-def _sg_color(sg: str) -> str:
-    return BLOCK_COLORS.get(REGISTRY.token_block(sg), "#999999")
+from data.feature_registry import REGISTRY
 
 
 def _forward_kwargs(batch: dict, device: torch.device) -> dict:
@@ -253,154 +230,6 @@ def ablate_fold(model, loader, device, token_names: List[str]):
 
 
 # ---------------------------------------------------------------------------
-# Visualisation
-# ---------------------------------------------------------------------------
-
-def plot_ablation_results(df: pd.DataFrame, output_path: Path,
-                          fig_tag: str = '') -> None:
-    """
-    Ranked bar chart of accuracy drop per sub-group for both ablation modes.
-    Sub-groups sorted by mean drop across modes.
-    """
-    mean_drop = (df.groupby('subgroup')['acc_drop']
-                 .mean()
-                 .sort_values(ascending=False))
-    subgroups_ordered = mean_drop.index.tolist()
-
-    token_df   = df[df['mode'] == 'token_zero'].set_index('subgroup')
-    feature_df = df[df['mode'] == 'feature_zero'].set_index('subgroup')
-
-    x     = np.arange(len(subgroups_ordered))
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-
-    token_drops   = [token_df.loc[sg, 'acc_drop']   if sg in token_df.index   else 0
-                     for sg in subgroups_ordered]
-    feature_drops = [feature_df.loc[sg, 'acc_drop'] if sg in feature_df.index else 0
-                     for sg in subgroups_ordered]
-
-    ax.bar(x - width/2, token_drops,   width, label='Token zero',
-           color='#4A90D9', edgecolor='black', linewidth=0.6, alpha=0.9)
-    ax.bar(x + width/2, feature_drops, width, label='Feature zero',
-           color='#F4B942', edgecolor='black', linewidth=0.6, alpha=0.9)
-
-    ax.axhline(0, color='black', linewidth=1)
-    ax.set_xticks(x)
-    ax.set_xticklabels(display_subgroups(subgroups_ordered), rotation=45, ha='right', fontsize=10)
-    ax.set_ylabel('Accuracy drop (baseline − ablated)', fontsize=12)
-    ax.set_title(
-        f'{fig_tag}Sub-group Ablation — Classification Accuracy Drop\n'
-        '(larger = sub-group more important for classification)',
-        fontsize=13, fontweight='bold'
-    )
-    ax.legend(fontsize=11)
-    ax.grid(True, axis='y', alpha=0.3)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    # Block boundary annotations — registry-driven, supports any block count
-    block_of = {sg: REGISTRY.token_block(sg) for sg in subgroups_ordered}
-    blocks_in_order = list(dict.fromkeys(block_of[sg] for sg in subgroups_ordered))
-    # Note: subgroups_ordered is sorted by drop magnitude, not block, so
-    # boundary lines/labels here annotate composition rather than draw a
-    # clean partition. We instead annotate each block's mean x-position.
-    ymax = max(max(token_drops, default=0.01), max(feature_drops, default=0.01))
-    for block_name in blocks_in_order:
-        xs = [i for i, sg in enumerate(subgroups_ordered) if block_of[sg] == block_name]
-        if xs:
-            ax.text(np.mean(xs), ymax * 1.02, f'← {block_name.upper()} →',
-                    ha='center', fontsize=9, color=BLOCK_COLORS.get(block_name, '#333'),
-                    style='italic')
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=350, bbox_inches='tight')
-    plt.close()
-    print(f"  Saved: {output_path}")
-
-
-def plot_cross_fold_summary(summary_df: pd.DataFrame, output_path: Path,
-                            fig_tag: str = '') -> None:
-    """Cross-fold mean ± std accuracy drop per sub-group, with a
-    Benjamini-Hochberg FDR-corrected one-sample t-test (acc_drop vs 0)
-    per subgroup."""
-    from scipy import stats
-
-    for mode in ['token_zero', 'feature_zero']:
-        mode_df = summary_df[summary_df['mode'] == mode]
-        if mode_df.empty:
-            continue
-
-        pivot = mode_df.pivot(index='subgroup', columns='fold', values='acc_drop')
-        mean  = pivot.mean(axis=1).sort_values(ascending=False)
-        std   = pivot.std(axis=1).reindex(mean.index)
-
-        n_tests = len(mean)
-        raw_pvals = pivot.reindex(mean.index).apply(
-            lambda row: stats.ttest_1samp(row.dropna(), 0.0).pvalue
-            if row.dropna().size > 1 else np.nan,
-            axis=1,
-        )
-        valid = raw_pvals.notna()
-        qvals = pd.Series(np.nan, index=raw_pvals.index)
-        if valid.sum() > 0:
-            qvals[valid] = stats.false_discovery_control(
-                raw_pvals[valid].values, method='bh'
-            )
-        sig = qvals < 0.05
-
-        fig, ax = plt.subplots(figsize=(13, 5))
-        x = np.arange(len(mean))
-
-        mode_color = '#4A90D9' if mode == 'token_zero' else '#F4B942'
-        ax.bar(x, mean.values, color=mode_color, edgecolor='black',
-               linewidth=0.6, alpha=0.9)
-        ax.errorbar(x, mean.values, yerr=std.values,
-                    fmt='none', color='black', capsize=3, linewidth=1.2)
-
-        y_range = mean.values.max() - mean.values.min()
-        fixed_offset = 0.06 * y_range
-        for xi, m, s, is_sig in zip(x, mean.values, std.values, sig.values):
-            if is_sig:
-                y_star = m + s + fixed_offset if m >= 0 else s + fixed_offset
-                ax.annotate('*', (xi, y_star), ha='center', va='bottom',
-                            fontsize=14, fontweight='bold')
-
-        # Give the star row room rather than letting it clip at the top
-        ymin, ymax = ax.get_ylim()
-        ax.set_ylim(ymin, ymax + 0.08 * y_range)
-
-        ax.axhline(0, color='black', linewidth=1)
-        ax.set_xticks(x)
-        ax.set_xticklabels(display_subgroups(list(mean.index)), rotation=45, ha='right', fontsize=10)
-        ax.set_ylabel('Mean accuracy drop (mean ± std over folds)', fontsize=11)
-        ax.set_title(
-            f'{fig_tag}Cross-Fold Ablation — {mode.replace("_", " ").title()}\n'
-            f'Sub-groups ranked by mean importance  '
-            f'(* q < 0.05, Benjamini-Hochberg FDR, n={n_tests})',
-            fontsize=13, fontweight='bold'
-        )
-        ax.grid(True, axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-
-        plt.tight_layout()
-        out = output_path.parent / f'cross_fold_ablation_{mode}.png'
-        plt.savefig(out, dpi=350, bbox_inches='tight')
-        plt.close()
-        print(f"  Saved: {out}")
-
-        stats_out = output_path.parent / f'cross_fold_ablation_{mode}_stats.csv'
-        stats_df = pd.DataFrame({
-            'subgroup': mean.index, 'mean_acc_drop': mean.values,
-            'std_acc_drop': std.values, 'p_value': raw_pvals.values,
-            'q_value_bh': qvals.values, 'significant_fdr': sig.values,
-        })
-        stats_df.to_csv(stats_out, index=False)
-        print(f"  Saved: {stats_out}")
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -415,8 +244,6 @@ def main():
     parser.add_argument('--config',         required=True,
                         help='Path to model config JSON')
     parser.add_argument('--output_dir',     default='ablation_analysis')
-    parser.add_argument('--model_label',     default='β-VAE Standard')
-    parser.add_argument('--gencode_version', default='v49')
     parser.add_argument('--batch_size',     type=int, default=256)
     parser.add_argument('--device',
                         default='cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -425,10 +252,6 @@ def main():
     exp_dir    = Path(args.experiment_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    tag_parts = [p for p in [args.model_label,
-                 f'GENCODE {args.gencode_version}'] if p]
-    fig_tag   = ' | '.join(tag_parts) + ' — ' if tag_parts else ''
 
     device = torch.device(args.device)
 
@@ -529,12 +352,6 @@ def main():
 
         fold_df.to_csv(results_csv, index=False)
 
-        plot_ablation_results(
-            fold_df,
-            fold_out / 'ablation_bar.png',
-            fig_tag=f'{fig_tag}fold_{fold_idx} — '
-        )
-
         all_fold_results.append(fold_df)
         print(f"\n  Fold {fold_idx} complete → {fold_out}/")
 
@@ -545,12 +362,6 @@ def main():
 
         combined = pd.concat(all_fold_results, ignore_index=True)
         combined.to_csv(output_dir / 'all_folds_ablation.csv', index=False)
-
-        plot_cross_fold_summary(
-            combined,
-            output_dir / 'cross_fold_ablation.png',
-            fig_tag=fig_tag
-        )
 
         print("\nSub-group importance ranking (token_zero, mean acc drop):")
         token_summary = (combined[combined['mode'] == 'token_zero']
