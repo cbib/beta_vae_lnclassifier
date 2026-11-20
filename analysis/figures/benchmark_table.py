@@ -3,14 +3,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import tables
+
 CSV = "benchmark_table_with_ci.csv"  # common-subset table with gene-clustered CIs
 DISPLAY = {"lncrnabert": "lncRNA-BERT", "blnc": "β-LNC", "rnasamba": "RNAsamba",
            "cpat": "CPAT", "feature_only": "Feature-only", "lncdc": "lncDC",
            "cpc2": "CPC2", "orthrus": "Orthrus"}
 # (folder key, value column, CI low, CI high, header)
 SPECS = [("b1", "f1", "f1_gene_ci_low", "f1_gene_ci_high", "Full test"),
-         ("b2", "f1", "f1_gene_ci_low", "f1_gene_ci_high", "Unseen by v46"),
-         ("b3", "f1", "f1_gene_ci_low", "f1_gene_ci_high", "Seen by v46"),
+         ("b2", "f1", "f1_gene_ci_low", "f1_gene_ci_high", "Unseen by v{cut}"),
+         ("b3", "f1", "f1_gene_ci_low", "f1_gene_ci_high", "Seen by v{cut}"),
          ("b1", "auc", "auc_gene_ci_low", "auc_gene_ci_high", "AUC, full test")]
 
 
@@ -23,14 +25,11 @@ def _load(path):
     return df
 
 
-def _tex(s):
-    return s.replace("β", r"$\beta$")
-
-
-def build(b1, b2, b3, out_dir):
+def build(b1, b2, b3, out_dir, cutoff=46):
     """Write benchmark_table.csv and benchmark_table.tex; return (inputs, outputs).
 
-    b1, b2, b3: benchmark folders (full, unseen, seen), each holding CSV.
+    b1, b2, b3: benchmark folders (full, unseen, seen), each holding CSV; cutoff: the
+    GENCODE release of the unseen/seen split, used in the column headers.
     Raises if a file is missing, the method sets differ or a method has no DISPLAY name."""
     folders = {"b1": Path(b1), "b2": Path(b2), "b3": Path(b3)}
     inputs = [folders[k] / CSV for k in folders]
@@ -45,6 +44,7 @@ def build(b1, b2, b3, out_dir):
     order = frames["b1"]["f1"].sort_values(ascending=False).index
     heads = []
     for key, val, lo, hi, label in SPECS:
+        label = label.format(cut=cutoff)
         n = int(frames[key]["n_samples"].iloc[0])
         heads.append((label if val == "auc" else f"{label} (n = {n:,})",
                       label if val == "auc" else f"{label} ($n={n:,}$)".replace(",", "{,}")))
@@ -58,14 +58,8 @@ def build(b1, b2, b3, out_dir):
             cells.append(s)
             tcells.append(rf"\textbf{{{s}}}" if round(r[v], 3) == b else s)
         plain.append([DISPLAY[m]] + cells)
-        tcells.insert(0, _tex(DISPLAY[m]))
-        tex.append(" & ".join(tcells) + r" \\")
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(plain, columns=["Method"] + [h[0] for h in heads]).to_csv(
-        out / "benchmark_table.csv", index=False, encoding="utf-8")
-    lines = [r"\begin{tabular}{l" + "c" * len(SPECS) + "}", r"\toprule",
-             " & ".join(["Method"] + [h[1] for h in heads]) + r" \\", r"\midrule",
-             *tex, r"\bottomrule", r"\end{tabular}"]
-    (out / "benchmark_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return inputs, [out / "benchmark_table.csv", out / "benchmark_table.tex"]
+        tcells.insert(0, tables.tex(DISPLAY[m]))
+        tex.append(tcells)
+    outputs = tables.write(out_dir, "benchmark_table", ["Method"] + [h[0] for h in heads], plain,
+                           ["Method"] + [h[1] for h in heads], tex)
+    return inputs, outputs
