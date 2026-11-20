@@ -32,11 +32,16 @@ def resolved_font():
     return font_manager.FontProperties(family=FONTS).get_name()
 
 
-def new_figure(width, height_mm, nrows=1, ncols=1, **kw):
-    """(fig, axes) at a journal width ("single" or "double") and a height in mm."""
+def new_figure(width, height_mm, nrows=1, ncols=1, mosaic=None, **kw):
+    """(fig, axes) at a journal width ("single" or "double") and a height in mm.
+
+    With mosaic (a subplot_mosaic layout) axes is a dict keyed by the labels."""
     apply()
-    return plt.subplots(nrows, ncols, figsize=(WIDTH[width], height_mm * MM),
-                        layout="constrained", **kw)
+    size = (WIDTH[width], height_mm * MM)
+    if mosaic is not None:
+        fig = plt.figure(figsize=size, layout="constrained")
+        return fig, fig.subplot_mosaic(mosaic, **kw)
+    return plt.subplots(nrows, ncols, figsize=size, layout="constrained", **kw)
 
 
 def panel_label(ax, letter):
