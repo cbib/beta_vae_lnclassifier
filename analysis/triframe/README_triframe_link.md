@@ -38,7 +38,8 @@ Pass rule: all |Δ logit| ≤ `--atol_logit` (use 1e-5 with `--batch_size 1`; ba
 runs show ~1e-4 float noise), IIA equal in every group (a flip is only accepted
 when the reference probability is within 1e-4 of 0.5), greedy token order
 identical and IIA gaps ≤ 1e-9.
-Requires `pip install triframe` (or the repo on PYTHONPATH).
+Requires triframe 0.1.0: `git clone https://github.com/cbib/triframe.git && pip install -e triframe`
+(or the repo on PYTHONPATH).
 
 Definitions (β-LNC is the reference; triframe now exposes each variant):
 1. Noise control: `noise_null_control(mode="norm_matched", source_batches=…)`

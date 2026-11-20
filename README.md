@@ -133,7 +133,7 @@ conda env create -f /tmp/env_cpu.yml
 
 Other steps have their own environments: `cdhit_env.yml` (clustering), `lncrnabert_environment.yml`
 (lncRNA-BERT, see below) and, only for the equivalence checks in `analysis/triframe/`,
-`pip install triframe`. The remaining benchmark tools are not part of this repository: CPAT (needs R)
+triframe (see [Related repository](#related-repository)). The remaining benchmark tools are not part of this repository: CPAT (needs R)
 and CPC2 run inside `beta_lncrna`, LncDC in `lncdc`, Orthrus in `orthrus`, RNAsamba in a Singularity
 image; the header of `analysis/benchmark/run_benchmark_tools.sh` names each.
 
@@ -332,6 +332,22 @@ python -m analysis.figures --release 49 \
 `interpretability_main`, `patching`, `ablations` and `latent_probing`. The unseen and seen benchmark
 folders (`benchmark_unseen_v46`, `benchmark_seen_v46`, cutoff `--unseen_cutoff`, default 46) are
 read as siblings of `--benchmark_dir`.
+
+---
+
+## Related repository
+
+[triframe](https://github.com/cbib/triframe) is the domain-independent core of the three-layer
+analysis used here (ablation and probing, Fréchet geometry, interchange-intervention patching);
+β-LNC is its case study. `analysis/triframe/` checks that triframe, driven through an independent
+adapter, reproduces the β-LNC results (`bash scripts/triframe_equivalence.sh`; see
+`analysis/triframe/README_triframe_link.md`). triframe is installed from its repository, next to
+this one:
+
+```bash
+git clone https://github.com/cbib/triframe.git
+pip install -e triframe          # inside the beta_lncrna environment
+```
 
 ---
 
