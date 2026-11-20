@@ -10,6 +10,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Add to PYTHONPATH so Python can find modules
 export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+cd "$PROJECT_ROOT"   # every step uses paths relative to the repository root
 
 echo "=========================================="
 echo "GENCODE Preprocessing Pipeline"
@@ -31,22 +32,23 @@ mkdir -p logs
 
 # Step 0: Download
 echo "[Step 0/6] Downloading GENCODE v${GENCODE_VERSION}..."
-bash 00_download_gencode.sh
+bash "${SCRIPT_DIR}/00_download_gencode.sh"
 echo ""
 
 # Step 1: Extract biotypes
 echo "[Step 1/6] Extracting biotypes from GTF..."
-bash 01_extract_biotypes.sh
+bash "${SCRIPT_DIR}/01_extract_biotypes.sh"
 echo ""
 
 # Step 2: Filter by gene biotype
 echo "[Step 2/6] Filtering by gene biotype..."
-bash 02_filter_gene_biotypes.sh
+bash "${SCRIPT_DIR}/02_filter_gene_biotypes.sh"
 echo ""
 
 # Step 3: CD-HIT clustering
 echo "[Step 3/6] Submitting the CD-HIT clustering jobs..."
-(cd "$PROJECT_ROOT" && sbatch scripts/run_lnc_cdhit.sh && sbatch scripts/run_pc_cdhit.sh)
+sbatch scripts/run_lnc_cdhit.sh
+sbatch scripts/run_pc_cdhit.sh
 echo "Waiting for CD-HIT to complete..."
 echo "(This may take 2-6 hours depending on cluster load)"
 echo ""
@@ -55,11 +57,11 @@ echo "  squeue -u \$USER"
 echo "  tail -f logs/v49_lnc_cdhit.log logs/v49_pc_cdhit.log"
 echo ""
 echo "Once CD-HIT completes, run:"
-echo "  bash 04_filter_to_cdhit.sh"
-echo "  bash 05_create_visualizations.sh"
-echo "  bash 06_sanity_check.sh"
+echo "  bash analysis/prepare_gencode/04_filter_to_cdhit.sh"
+echo "  bash analysis/prepare_gencode/05_create_visualizations.sh"
+echo "  bash analysis/prepare_gencode/06_sanity_check.sh"
 echo ""
-echo "Or re-run this script to continue from Step 4"
+echo "(Running this script again starts from Step 0.)"
 exit 0
 
 # Steps 4-6 will run after CD-HIT completes
@@ -72,17 +74,17 @@ done
 
 # # Step 4: Filter to CD-HIT
 echo "[Step 4/6] Filtering biotypes to CD-HIT output..."
-bash 04_filter_to_cdhit.sh
+bash "${SCRIPT_DIR}/04_filter_to_cdhit.sh"
 echo ""
 
 # # Step 5: Visualizations
 echo "[Step 5/6] Creating visualizations..."
-bash 05_create_visualizations.sh
+bash "${SCRIPT_DIR}/05_create_visualizations.sh"
 echo ""
 
 # # Step 6: Sanity check
 echo "[Step 6/6] Running sanity check..."
-bash 06_sanity_check.sh
+bash "${SCRIPT_DIR}/06_sanity_check.sh"
 echo ""
 
 # Step 7: Train/val + test split (optional)
@@ -91,7 +93,7 @@ if [ "${DO_SPLIT}" = "1" ]; then
     python "${PROJECT_ROOT}/analysis/prepare_gencode/scripts/split_test_set.py" \
         --lnc_fasta data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa \
         --pc_fasta  data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa \
-        --output_dir data/splits/ \
+        --output_dir data/split_gencode_${GENCODE_VERSION} \
         --test_size ${TEST_SIZE} \
         --seed ${SPLIT_SEED}
     echo ""
@@ -101,7 +103,7 @@ else
     echo "  python analysis/prepare_gencode/scripts/split_test_set.py \\"
     echo "    --lnc_fasta data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa \\"
     echo "    --pc_fasta  data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa \\"
-    echo "    --output_dir data/splits/"
+    echo "    --output_dir data/split_gencode_${GENCODE_VERSION}"
     echo ""
 fi
 

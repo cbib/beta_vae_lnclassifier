@@ -1,230 +1,119 @@
 #!/bin/bash
+# Fetch the Zenodo deposit of the paper and check that every file the configs name exists.
+#
+#   bash scripts/setup_data.sh [--releases "47 49"] [--download-dir DIR] [--check-only]
+#
+# Run it from the repository root (DATA_ROOT, default: the current directory).
+#   1. downloads the three zip files of the deposit into the download folder (default downloads/);
+#      a file that is already there with the right MD5 is not downloaded again
+#   2. verifies every MD5, then unzips data.zip into data/ and each experiments zip into the
+#      repository root (each holds the folder gencode_v<release>_experiments/ at its top level)
+#   3. checks, per release, that every file named in data.* of configs/beta_vae_subgroup_base_g<v>.json
+#      and configs/beta_vae_feature_only_base_g<v>.json exists; exits 1 and lists what is missing
+# --check-only skips steps 1 and 2 and only runs the check (for a data/ folder built another way).
+# Needs curl or wget, unzip, python3 and md5sum (or openssl).
 
-# setup_data.sh
-# Downloads and extracts dataset from Zenodo for lncRNA classification project
-# Usage: ./setup_data.sh
+set -euo pipefail
 
-set -e  # Exit on error
+# ---- the v3 deposit: replace the placeholders once the DOI exists (MD5 as listed by Zenodo)
+ZENODO_RECORD_ID="PLACEHOLDER"
+ZENODO_DOI="PLACEHOLDER"
+DEPOSIT=(
+  "data.zip|PLACEHOLDER"
+  "gencode_v47_experiments.zip|PLACEHOLDER"
+  "gencode_v49_experiments.zip|PLACEHOLDER"
+)
+# folders the final pipeline writes under gencode_v<release>_experiments/ (@R = release);
+# a missing one is only a note, the pipeline creates it
+EXP_SUBDIRS=(beta_vae_subgroup_base_g@R feature_only_g@R frechet_analysis benchmark_tools
+             benchmark_comparison benchmark_unseen_v46 benchmark_seen_v46)
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Zenodo record ID and DOI
-ZENODO_RECORD_ID="18849718"  # e.g., "1234567"
-ZENODO_DOI="10.5281/zenodo.18849718"
-
-# File information
-DATA_ZIP="data.zip"
-V47_ZIP="gencode_v47_experiments.zip"
-V49_ZIP="gencode_v49_experiments.zip"
-
-# Zenodo download URLs (constructed from record ID)
-DATA_URL="https://zenodo.org/record/${ZENODO_RECORD_ID}/files/${DATA_ZIP}"
-V47_URL="https://zenodo.org/record/${ZENODO_RECORD_ID}/files/${V47_ZIP}"
-V49_URL="https://zenodo.org/record/${ZENODO_RECORD_ID}/files/${V49_ZIP}"
-
-# Target directories
-PROJECT_ROOT="$(pwd)"
-DATA_DIR="${PROJECT_ROOT}/data"
-EXPERIMENTS_DIR="${PROJECT_ROOT}/experiments"
-
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}lncRNA Classification Dataset Setup${NC}"
-echo -e "${GREEN}================================================${NC}"
-echo ""
-echo "Zenodo DOI: ${ZENODO_DOI}"
-echo "Project root: ${PROJECT_ROOT}"
-echo ""
-
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Function to download file with progress
-download_file() {
-    local url=$1
-    local output=$2
-    
-    if command_exists wget; then
-        echo -e "${GREEN}Downloading with wget...${NC}"
-        wget --no-check-certificate -O "$output" "$url"
-    elif command_exists curl; then
-        echo -e "${GREEN}Downloading with curl...${NC}"
-        curl -L -o "$output" "$url"
-    else
-        echo -e "${RED}Error: Neither wget nor curl found.${NC}"
-        echo -e "${YELLOW}Please install wget or curl, or download manually.${NC}"
-        return 1
-    fi
-}
-
-# Check for unzip
-if ! command_exists unzip; then
-    echo -e "${RED}Error: unzip not found.${NC}"
-    echo -e "${YELLOW}Please install unzip: sudo apt install unzip${NC}"
-    exit 1
-fi
-
-# Create directories
-echo -e "${GREEN}Creating directory structure...${NC}"
-mkdir -p "${DATA_DIR}"
-mkdir -p "${EXPERIMENTS_DIR}"
-mkdir -p "${PROJECT_ROOT}/downloads"
-
-cd "${PROJECT_ROOT}/downloads"
-
-# Download data.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}[1/3] Downloading data.zip${NC}"
-echo -e "${GREEN}================================================${NC}"
-if [ -f "${DATA_ZIP}" ]; then
-    echo -e "${YELLOW}${DATA_ZIP} already exists. Skipping download.${NC}"
-else
-    if [ "${ZENODO_RECORD_ID}" = "[RECORD_ID]" ]; then
-        echo -e "${YELLOW}Zenodo record ID not set.${NC}"
-        echo -e "${YELLOW}Please download manually from Zenodo:${NC}"
-        echo -e "${YELLOW}https://zenodo.org/record/YOUR_RECORD_ID/files/${DATA_ZIP}${NC}"
-        echo -e "${YELLOW}And place it in: ${PROJECT_ROOT}/downloads/${NC}"
-        read -p "Press Enter once you've downloaded ${DATA_ZIP}..."
-    else
-        download_file "$DATA_URL" "$DATA_ZIP" || {
-            echo -e "${RED}Download failed.${NC}"
-            echo -e "${YELLOW}Please download manually:${NC}"
-            echo -e "${YELLOW}${DATA_URL}${NC}"
-            echo -e "${YELLOW}And place it in: ${PROJECT_ROOT}/downloads/${NC}"
-            read -p "Press Enter once you've downloaded ${DATA_ZIP}..."
-        }
-    fi
-fi
-
-# Download gencode_v47_experiments.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}[2/3] Downloading gencode_v47_experiments.zip${NC}"
-echo -e "${GREEN}================================================${NC}"
-if [ -f "${V47_ZIP}" ]; then
-    echo -e "${YELLOW}${V47_ZIP} already exists. Skipping download.${NC}"
-else
-    if [ "${ZENODO_RECORD_ID}" = "[RECORD_ID]" ]; then
-        echo -e "${YELLOW}Zenodo record ID not set.${NC}"
-        echo -e "${YELLOW}Please download manually from Zenodo and place in: ${PROJECT_ROOT}/downloads/${NC}"
-        read -p "Press Enter once you've downloaded ${V47_ZIP}..."
-    else
-        download_file "$V47_URL" "$V47_ZIP" || {
-            echo -e "${RED}Download failed.${NC}"
-            echo -e "${YELLOW}Please download manually and place in: ${PROJECT_ROOT}/downloads/${NC}"
-            read -p "Press Enter once you've downloaded ${V47_ZIP}..."
-        }
-    fi
-fi
-
-# Download gencode_v49_experiments.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}[3/3] Downloading gencode_v49_experiments.zip${NC}"
-echo -e "${GREEN}================================================${NC}"
-if [ -f "${V49_ZIP}" ]; then
-    echo -e "${YELLOW}${V49_ZIP} already exists. Skipping download.${NC}"
-else
-    if [ "${ZENODO_RECORD_ID}" = "[RECORD_ID]" ]; then
-        echo -e "${YELLOW}Zenodo record ID not set.${NC}"
-        echo -e "${YELLOW}Please download manually from Zenodo and place in: ${PROJECT_ROOT}/downloads/${NC}"
-        read -p "Press Enter once you've downloaded ${V49_ZIP}..."
-    else
-        download_file "$V49_URL" "$V49_ZIP" || {
-            echo -e "${RED}Download failed.${NC}"
-            echo -e "${YELLOW}Please download manually and place in: ${PROJECT_ROOT}/downloads/${NC}"
-            read -p "Press Enter once you've downloaded ${V49_ZIP}..."
-        }
-    fi
-fi
-
-# Verify all files exist
-echo ""
-echo -e "${GREEN}Verifying downloaded files...${NC}"
-if [ ! -f "${DATA_ZIP}" ] || [ ! -f "${V47_ZIP}" ] || [ ! -f "${V49_ZIP}" ]; then
-    echo -e "${RED}Error: Not all required files are present.${NC}"
-    echo "Expected files in ${PROJECT_ROOT}/downloads/:"
-    echo "  - ${DATA_ZIP}"
-    echo "  - ${V47_ZIP}"
-    echo "  - ${V49_ZIP}"
-    exit 1
-fi
-echo -e "${GREEN} All files present${NC}"
-
-# Extract data.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}Extracting data.zip to ${DATA_DIR}/${NC}"
-echo -e "${GREEN}================================================${NC}"
-unzip -q -o "${DATA_ZIP}" -d "${DATA_DIR}"
-echo -e "${GREEN} data.zip extracted${NC}"
-
-# Extract gencode_v47_experiments.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}Extracting gencode_v47_experiments.zip${NC}"
-echo -e "${GREEN}================================================${NC}"
-unzip -q -o "${V47_ZIP}" -d "${EXPERIMENTS_DIR}"
-echo -e "${GREEN} gencode_v47_experiments.zip extracted${NC}"
-
-# Extract gencode_v49_experiments.zip
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}Extracting gencode_v49_experiments.zip${NC}"
-echo -e "${GREEN}================================================${NC}"
-unzip -q -o "${V49_ZIP}" -d "${EXPERIMENTS_DIR}"
-echo -e "${GREEN} gencode_v49_experiments.zip extracted${NC}"
-
-# Verify directory structure
-echo ""
-echo -e "${GREEN}Verifying directory structure...${NC}"
-
-# Check data subdirectories
-DATA_SUBDIRS=("cdhit_clusters" "dataset_biotypes" "lncRNABERT_results" "processed_features" "split_gencode_47" "split_gencode_49")
-for subdir in "${DATA_SUBDIRS[@]}"; do
-    if [ -d "${DATA_DIR}/${subdir}" ]; then
-        echo -e "${GREEN}${NC} data/${subdir}/"
-    else
-        echo -e "${RED}${NC} data/${subdir}/ not found"
-    fi
+RELEASES="47 49"; DOWNLOADS="downloads"; CHECK_ONLY=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --releases) RELEASES="$2"; shift 2;;
+    --download-dir) DOWNLOADS="${2%/}"; shift 2;;
+    --check-only) CHECK_ONLY=1; shift;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+    *) echo "unknown option $1" >&2; exit 2;;
+  esac
+done
+for r in $RELEASES; do
+  [[ "$r" =~ ^[0-9]{2}$ ]] || { echo "bad release '$r' (use 47 or 49)" >&2; exit 2; }
 done
 
-# Check experiment directories
-EXP_SUBDIRS=("beta_vae_contrastive_g47" "beta_vae_features_attn_g47" "beta_vae_features_g47" "cnn_g47" "stat_results")
-for subdir in "${EXP_SUBDIRS[@]}"; do
-    if [ -d "${EXPERIMENTS_DIR}/${subdir}" ] || [ -d "${EXPERIMENTS_DIR}/gencode_v47_experiments/${subdir}" ]; then
-        echo -e "${GREEN}${NC} experiments/${subdir}/"
+cd "${DATA_ROOT:-$(pwd)}"
+[[ -d configs ]] || { echo "configs/ not found in $(pwd): run from the repository root or set DATA_ROOT" >&2; exit 2; }
+
+md5_of() {
+  if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d' ' -f1
+  else openssl md5 -r "$1" | cut -d' ' -f1; fi
+}
+
+fetch() {  # fetch <file name> <target path>
+  local url="https://zenodo.org/records/${ZENODO_RECORD_ID}/files/$1?download=1"
+  if command -v curl >/dev/null 2>&1; then curl -fL --retry 3 -C - -o "$2" "$url"
+  elif command -v wget >/dev/null 2>&1; then wget -c -O "$2" "$url"
+  else echo "neither curl nor wget found" >&2; return 1; fi
+}
+
+if (( ! CHECK_ONLY )); then
+  [[ "$ZENODO_RECORD_ID" != "PLACEHOLDER" ]] || { echo "ZENODO_RECORD_ID is not set: the v3 deposit does not exist yet (edit the top of this script)" >&2; exit 2; }
+  for entry in "${DEPOSIT[@]}"; do
+    [[ "${entry#*|}" != "PLACEHOLDER" ]] || { echo "MD5 of ${entry%%|*} is not set (edit the top of this script)" >&2; exit 2; }
+  done
+  command -v unzip >/dev/null 2>&1 || { echo "unzip not found" >&2; exit 1; }
+  mkdir -p "$DOWNLOADS" data
+
+  echo "Zenodo record ${ZENODO_RECORD_ID} (DOI ${ZENODO_DOI})"
+  for entry in "${DEPOSIT[@]}"; do
+    name="${entry%%|*}"; md5="${entry#*|}"; file="$DOWNLOADS/$name"
+    if [[ -f "$file" && "$(md5_of "$file")" == "$md5" ]]; then
+      echo "have $name"
     else
-        echo -e "${YELLOW}?${NC} experiments/${subdir}/ (check manually)"
+      echo "downloading $name"
+      fetch "$name" "$file" || true          # a failed or interrupted transfer is caught by the MD5 below
+      [[ -f "$file" && "$(md5_of "$file")" == "$md5" ]] || { echo "MD5 mismatch for $file: delete it and rerun" >&2; exit 1; }
     fi
+  done
+  for entry in "${DEPOSIT[@]}"; do
+    name="${entry%%|*}"
+    [[ "$name" == data.zip ]] && dest=data || dest=.
+    echo "unzipping $name -> $dest/"
+    unzip -q -o "$DOWNLOADS/$name" -d "$dest"
+  done
+fi
+
+STATUS=0
+for r in $RELEASES; do
+  echo "== GENCODE ${r}"
+  python3 - "$r" <<'PY' || STATUS=1
+import json, os, sys
+
+rel = sys.argv[1]
+missing, n = {}, 0
+for kind in ("subgroup", "feature_only"):
+    cfg = f"configs/beta_vae_{kind}_base_g{rel}.json"
+    if not os.path.isfile(cfg):
+        missing[cfg] = "config file"
+        continue
+    for key, val in json.load(open(cfg))["data"].items():
+        if isinstance(val, str) and "/" in val:
+            n += 1
+            path = os.path.expandvars(val)
+            if not os.path.exists(path):
+                missing.setdefault(path, f"{os.path.basename(cfg)}: data.{key}")
+if missing:
+    print(f"  FAILED: {len(missing)} of {n} configured paths missing:")
+    print("\n".join(f"    {p}   ({w})" for p, w in sorted(missing.items())))
+    sys.exit(1)
+print(f"  ok: all {n} configured data paths exist")
+PY
+  for sub in "${EXP_SUBDIRS[@]}"; do
+    d="gencode_v${r}_experiments/${sub//@R/$r}"
+    [[ -d "$d" ]] || echo "  note: $d does not exist yet"
+  done
 done
 
-# Print summary
-echo ""
-echo -e "${GREEN}================================================${NC}"
-echo -e "${GREEN}Setup Complete!${NC}"
-echo -e "${GREEN}================================================${NC}"
-echo ""
-echo "Directory structure:"
-echo "  ${PROJECT_ROOT}/"
-echo "  ├── data/"
-echo "  │   ├── cdhit_clusters/"
-echo "  │   ├── dataset_biotypes/"
-echo "  │   ├── lncRNABERT_results/"
-echo "  │   ├── processed_features/"
-echo "  │   ├── split_gencode_47/"
-echo "  │   └── split_gencode_49/"
-echo "  ├── experiments/"
-echo "  │   ├── gencode_v47_experiments/"
-echo "  │   └── gencode_v49_experiments/"
-echo "  └── downloads/ (can be deleted)"
-echo ""
-echo -e "${YELLOW}Note: You can safely delete the downloads/ directory to save space${NC}"
-echo ""
-echo -e "${GREEN}Data is ready for use!${NC}"
+if (( STATUS )); then echo "data check FAILED" >&2; exit 1; fi
+echo "data check passed for: $RELEASES"

@@ -35,15 +35,21 @@ GENCODE v47 and v49 held-out test sets.
     • Writes benchmark_table.csv, predictions_merged.csv, hard_case_summary.csv
     ↓
 [2.5] compute_benchmark_ci.py
-    • 95% bootstrap CI on F1 (10,000 resamples) and 95% DeLong CI on AUC,
+    • 95% gene-clustered percentile bootstrap CI on macro-F1, accuracy and AUC
+      (10,000 resamples, seed 42; all isoforms of a drawn gene come along),
       per method — the point estimates from step 2 with confidence intervals
+    • Paired gene-clustered bootstrap of the macro-F1 difference to a reference method
     • Writes benchmark_table_with_ci.csv
+    ↓
+[2.6] ensemble_vs_models.py
+    • Fold models vs the ensemble vs zero-shot lncRNA-BERT
+    • Writes ensemble_vs_models_f1.csv and ensemble_vs_models_diffs.csv
 ```
 
 Stage 1 is a full benchmark tool run and can take a long time (each
 tool's own environment/dependencies apply — see `run_benchmark_tools.sh`
 header for per-tool notes on RNAsamba's TF1/Keras2.1 pinning via Singularity,
-and Orthrus's conda env activation). Stages 2–3 are fast once Stage 1's
+and Orthrus's conda env activation). Stages 2 to 2.6 are fast once Stage 1's
 outputs exist (stage 2.5 runs a 10,000-resample bootstrap per method).
 
 On SLURM, `scripts/submit_pipeline.sh` submits the benchmark stage
@@ -71,9 +77,7 @@ bash analysis/benchmark/run_full_benchmark.sh \
     --feature_only_csv gencode_v49_experiments/feature_only_g49/evaluation_csvs/test_predictions.csv \
     --lncrnabert_csv  gencode_v49_experiments/benchmark_tools/lncrnabert_test_predictions.csv \
     --orthrus_env     $HOME/.conda/envs/orthrus \
-    --rnasamba_sif    rnasamba.sif \
-    --error_only \
-    --min_set_size 5
+    --rnasamba_sif    rnasamba.sif
 ```
 
 ### Individual tool run (if you only need to add/refresh one method)
@@ -99,13 +103,30 @@ python analysis/benchmark/compute_benchmark_ci.py \
     --rnasamba_tsv    gencode_v49_experiments/benchmark_tools/rnasamba_results.tsv \
     --orthrus_csv     gencode_v49_experiments/benchmark_tools/orthrus/orthrus_test_predictions.csv \
     --lncrnabert_csv  gencode_v49_experiments/benchmark_tools/lncrnabert_test_predictions.csv \
+    --test_lnc_fasta  data/split_gencode_49/lnc_test.fa \
+    --test_pc_fasta   data/split_gencode_49/pc_test.fa \
     --n_bootstrap     10000 \
     --output_dir      gencode_v49_experiments/benchmark_comparison
 ```
 
-`--blnc_csv` is the only required argument and also serves as the
-canonical true-label source; every other `--*_csv`/`--*_tsv` is optional —
-only the methods you provide files for are evaluated.
+`--blnc_csv`, `--test_lnc_fasta` and `--test_pc_fasta` are required: the first is the
+canonical true-label source, the FASTA headers give the gene of each transcript for the
+clustered resampling. Every other `--*_csv`/`--*_tsv` is optional — only the methods you
+provide files for are evaluated.
+
+### Seen and unseen transcripts (B2, B3)
+
+```bash
+bash analysis/benchmark/run_unseen_benchmark.sh \
+    --comparison_dir gencode_v49_experiments/benchmark_comparison \
+    --release 49 --cutoff 46
+```
+
+Scores the predictions of an existing run on the transcripts that appear in no GENCODE release
+up to the cutoff (`benchmark_unseen_v46`, B2) and on those that do (`benchmark_seen_v46`, B3).
+Nothing is rerun: the method files, thresholds and bootstrap settings are read from
+`benchmark_provenance.json`. `--cache_dir gencode_release_index` (the default) holds the
+per-release ID tables; with that folder present the analysis runs offline.
 
 ---
 
@@ -122,8 +143,12 @@ benchmark_tools/
 
 benchmark_comparison/
   benchmark_table.csv              method, n_samples, accuracy, precision, recall, f1_macro, ...
-  benchmark_table_with_ci.csv      method, n_samples, accuracy, precision, recall,
-                                   f1, f1_ci_low, f1_ci_high, auc, auc_ci_low, auc_ci_high
+  benchmark_table_with_ci.csv      method, n_samples, n_genes, accuracy, precision, recall, f1, auc,
+                                   f1_gene_ci_low/high, acc_gene_ci_low/high, auc_gene_ci_low/high
+  ensemble_vs_models_f1.csv, ensemble_vs_models_diffs.csv
+  benchmark_provenance.json        input file hashes and settings of the run
   predictions_merged.csv           per-transcript predictions across all methods
   hard_case_summary.csv
+
+benchmark_unseen_v46/, benchmark_seen_v46/   B2 and B3 (run_unseen_benchmark.sh)
 ```

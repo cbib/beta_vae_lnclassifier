@@ -3,18 +3,20 @@
 Complete pipeline to prepare GENCODE data for lncRNA vs protein-coding classification. Proof-tested for v47 and v49.
 
 ## Quick Start
+
+Run every command from the repository root.
 ```bash
-# Run entire pipeline
-bash run_all.sh
+# Run steps 0-3 (submits the CD-HIT jobs, then stops)
+bash analysis/prepare_gencode/run_all.sh
 
 # Or run steps individually
-bash 00_download_gencode.sh
-bash 01_extract_biotypes.sh
-bash 02_filter_gene_biotypes.sh
-sbatch ../../scripts/run_lnc_cdhit.sh && sbatch ../../scripts/run_pc_cdhit.sh   # SLURM; or run from the repo root
-bash 04_filter_to_cdhit.sh
-bash 05_create_visualizations.sh
-bash 06_sanity_check.sh
+bash analysis/prepare_gencode/00_download_gencode.sh
+bash analysis/prepare_gencode/01_extract_biotypes.sh
+bash analysis/prepare_gencode/02_filter_gene_biotypes.sh
+sbatch scripts/run_lnc_cdhit.sh && sbatch scripts/run_pc_cdhit.sh   # SLURM
+bash analysis/prepare_gencode/04_filter_to_cdhit.sh
+bash analysis/prepare_gencode/05_create_visualizations.sh
+bash analysis/prepare_gencode/06_sanity_check.sh
 ```
 
 ## Pipeline Overview
@@ -42,7 +44,7 @@ conda activate cdhit_env
 
 Downloads GTF annotation and transcript FASTA files from GENCODE FTP.
 ```bash
-bash 00_download_gencode.sh
+bash analysis/prepare_gencode/00_download_gencode.sh
 ```
 
 **Output**:
@@ -56,7 +58,7 @@ bash 00_download_gencode.sh
 
 Parses GTF to create a CSV mapping transcript IDs to biotypes.
 ```bash
-bash 01_extract_biotypes.sh
+bash analysis/prepare_gencode/01_extract_biotypes.sh
 ```
 
 **Output**:
@@ -70,7 +72,7 @@ bash 01_extract_biotypes.sh
 
 Filters to transcripts from lncRNA or protein_coding genes only.
 ```bash
-bash 02_filter_gene_biotypes.sh
+bash analysis/prepare_gencode/02_filter_gene_biotypes.sh
 ```
 
 **Output**:
@@ -123,7 +125,7 @@ sbatch scripts/run_pc_cdhit.sh
 
 Matches biotype CSV to transcripts retained after CD-HIT.
 ```bash
-bash 04_filter_to_cdhit.sh
+bash analysis/prepare_gencode/04_filter_to_cdhit.sh
 ```
 
 **Output**:
@@ -136,7 +138,7 @@ bash 04_filter_to_cdhit.sh
 
 Generates the figures of dataset composition.
 ```bash
-bash 05_create_visualizations.sh
+bash analysis/prepare_gencode/05_create_visualizations.sh
 ```
 
 **Output**:
@@ -149,7 +151,7 @@ bash 05_create_visualizations.sh
 
 Validates final dataset before training.
 ```bash
-bash 06_sanity_check.sh
+bash analysis/prepare_gencode/06_sanity_check.sh
 ```
 
 **Checks**:

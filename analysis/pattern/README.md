@@ -56,8 +56,7 @@ Training (main_subgroup.py)
     ↓
 [8] python -m analysis.figures --only interpretability_main   (synthesis, main-text figure)
     • Three-panel consolidated figure: (A) the three-layer scatter
-      (Fréchet × ablation × symmetry, replaces the retired standalone
-      plot_interpretability_scatter.py), (B) single-subgroup symmetry vs
+      (Fréchet × ablation × symmetry), (B) single-subgroup symmetry vs
       IIA, (C) cross-fold greedy-search synergy curve. Designed for the
       paper's main text under a page-limit constraint — carries the full
       Layer 1/2/3 argument in one figure.
@@ -75,13 +74,18 @@ reads those outputs and renders every figure of the paper and the supplement.
 
 ## Usage
 
+The examples write to the stage folders that `layers.sh` uses, below `<experiment_dir>/interpretability/`:
+`1.1_representations`, `1.2_ablation`, `1.2b_input_ablation`, `1.3_residual_ablation`,
+`1.4_latent_probing`, `3.1_patching`, `3.2_patching_controls`, `3.3_joint_search`,
+`3.4_joint_controls`; the Fréchet analysis sits next to the experiment folders in `frechet_analysis/`.
+
 ### Step 1 — Extract representations
 
 ```bash
 python analysis/pattern/extract_representations.py \
     --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config         configs/beta_vae_subgroup_base_g49.json \
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
     --device         cuda:0
 ```
 
@@ -101,8 +105,8 @@ rendered by `python -m analysis.figures`.
 
 ```bash
 python analysis/pattern/analyze_latent_probing.py \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.4_latent_probing \
     --n_permutations  1000
 ```
 
@@ -122,7 +126,7 @@ With more than one fold present, this also writes cross-fold summaries
 python analysis/pattern/analyze_subgroup_ablation.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.2_ablation \
     --device          cuda:0
 ```
 
@@ -131,9 +135,9 @@ python analysis/pattern/analyze_subgroup_ablation.py \
 ```bash
 python analysis/pattern/analyze_residual_ablation.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.3_residual_ablation \
     --device          cuda:0
 ```
 
@@ -143,7 +147,7 @@ python analysis/pattern/analyze_residual_ablation.py \
 python analysis/pattern/patch_tokens.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/patching \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.1_patching \
     --device          cuda:0 \
     --n_pairs         200 \
     --min_confidence  0.7 \
@@ -170,8 +174,8 @@ python analysis/pattern/joint_patching_search.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
     --fold            all \
-    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching \
+    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.1_patching/all_folds_patching.csv \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.3_joint_search \
     --device          cuda:0 \
     --n_pairs         1000 \
     --mode            both \
@@ -273,22 +277,29 @@ is consistent with independent, non-synergistic contributions.
 Internal code, CSV columns, and checkpoint keys use `te`/`TE_*` for the
 repeat-element block for historical reasons. Display labels throughout
 plots and documents use `REP`/`REP_*` (the scientifically accurate name).
-Pass `--display_names` to the plotting scripts to apply this remapping in
-figure labels only — do not rename the internal keys.
+The figure code applies this remapping in the labels only — do not rename
+the internal keys.
 
 ---
 
 ## Output reference
 
+Below `<experiment_dir>/interpretability/` (stage ids as in `layers.sh`):
+
 ```
-representations/
+1.1_representations/
   fold_N_repr.npz            z, tokens, labels, token_names, block_names, ...
 
-frechet_analysis/
-  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction, fd_status
-  within_class_covariance_lncrna.csv, within_class_covariance_mrna.csv   subgroup x subgroup
+1.2_ablation/
+  all_folds_ablation.csv     subgroup, block, mode, acc_drop, fold, ...
 
-latent_probing/
+1.2b_input_ablation/
+  all_folds_input_ablation.csv
+
+1.3_residual_ablation/
+  all_folds_residual_ablation.csv
+
+1.4_latent_probing/
   fold_N/
     latent_probing.csv
     redundancy.csv
@@ -301,20 +312,16 @@ latent_probing/
   cross_fold_pattern_comparison_stats.csv    p_value_paired, q_value_bh, significant_fdr
   key_findings.txt
 
-ablation/analysis/
-  all_folds_ablation.csv                     subgroup, block, mode, acc_drop, fold, ...
-
-residual_ablation/
-  all_folds_residual_ablation.csv
-
-patching/
+3.1_patching/
   fold_N_patching.csv
   all_folds_patching.csv
   patching_summary.csv       subgroup, block, patch_mode, patch_scope, direction,
                              mean_delta_logit, n_valid_baseline, n_iia_success,
                              iia, symmetry_score, causal_effect, iia_overall, ...
 
-joint_patching/
+3.2_patching_controls/       the same files for the shuffled, same-class and noise controls
+
+3.3_joint_search/
   joint_patching_greedy_fold{N}.csv
   joint_patching_greedy_all_folds.csv
   joint_patching_greedy_summary.csv          mean/std iia_joint and additive-null per step
@@ -322,6 +329,17 @@ joint_patching/
   joint_patching_topk_all_folds.csv
   joint_patching_topk_summary.csv
 
-benchmark_comparison/
-  (figures are written by python -m analysis.figures, not here)
+3.4_joint_controls/          joint-search controls
+
+g<release>_results.txt       stage 3.5, the interventional results in one text file
 ```
+
+Beside the experiment folders:
+
+```
+frechet_analysis/
+  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction, fd_status
+  within_class_covariance_lncrna.csv, within_class_covariance_mrna.csv   subgroup x subgroup
+```
+
+The figures are written by `python -m analysis.figures`, not by these scripts.

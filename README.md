@@ -73,6 +73,7 @@ beta_vae_lnclassifier/
 ├── configs/                      # One config per release and model
 ├── analysis/
 │   ├── evaluation/               # per-fold evaluation of trained checkpoints
+│   ├── figures/                  # every paper figure and table (python -m analysis.figures)
 │   ├── pattern/                  # interpretability pipeline (see README below)
 │   ├── benchmark/                # cross-method comparison
 │   ├── prepare_gencode/          # GENCODE download, CD-HIT, splits
@@ -146,25 +147,42 @@ a new DOI covering both will be added here at publication.
 ### Download and setup
 
 ```bash
-bash scripts/setup_data.sh
+bash scripts/setup_data.sh                 # download, verify the MD5 sums, unzip, check
+bash scripts/setup_data.sh --check-only    # only check that every file the configs name exists
 ```
 
-This downloads and extracts all required files into `data/` and prints the
-`DATA_ROOT` export command to add to your environment.
+The script downloads the three zip files of the deposit with checksum verification, unzips `data/`
+and the two `gencode_v<v>_experiments/` folders into the repository root, and ends with a check per
+release that every file named in `data.*` of the release's configs exists; it exits non-zero when one
+is missing. Run it from the repository root. That folder is `DATA_ROOT` for all other scripts
+(`export DATA_ROOT=$PWD`).
 
 ### Reproduce from raw GENCODE (optional)
+
+Run every command from the repository root. The steps below are for release 49; the two CD-HIT
+scripts (SLURM) carry the release number in their file names and must be edited for 47.
 
 ```bash
 conda env create -f cdhit_env.yml
 conda activate cdhit_env
 
-cd analysis/prepare_gencode/
-GENCODE_VERSION=47 bash run_all.sh       # or 49
+GENCODE_VERSION=49 bash analysis/prepare_gencode/run_all.sh   # download, biotypes, gene-biotype filter,
+                                                              # then submits scripts/run_{lnc,pc}_cdhit.sh
 ```
 
+When both jobs have finished (`data/cdhit_clusters/g49_lncRNA_clustered.fa` and
+`data/cdhit_clusters/g49_pc_clustered.fa`), run the remaining steps and the gene-grouped split:
+
 ```bash
-DO_SPLIT=1 TEST_SIZE=0.05 GENCODE_VERSION=47 bash run_all.sh   # gene-grouped split
+GENCODE_VERSION=49 bash analysis/prepare_gencode/04_filter_to_cdhit.sh
+GENCODE_VERSION=49 bash analysis/prepare_gencode/06_sanity_check.sh
+python analysis/prepare_gencode/scripts/split_test_set.py \
+    --lnc_fasta data/cdhit_clusters/g49_lncRNA_clustered.fa \
+    --pc_fasta  data/cdhit_clusters/g49_pc_clustered.fa \
+    --output_dir data/split_gencode_49 --test_size 0.05 --seed 42
 ```
+
+See `analysis/prepare_gencode/README.md` for the steps and their outputs.
 
 ---
 
@@ -251,10 +269,12 @@ bash analysis/benchmark/run_full_benchmark.sh \
 ```
 
 Compares against CPAT, CPC2, LncDC, RNAsamba, Orthrus (4-track), and
-lncRNA-BERT, reporting accuracy/precision/recall/F1 with 95% gene-clustered
-bootstrap confidence intervals (10,000 resamples) and AUC with 95% DeLong CI
-per method. Results are given on the full test set and on the common subset
-scored by every method. See `analysis/benchmark/README.md` for the full pipeline.
+lncRNA-BERT. Macro-F1, accuracy and AUC carry 95% gene-clustered percentile
+bootstrap confidence intervals (10,000 resamples, seed 42; all isoforms of a
+drawn gene come along). Results are given on the full test set and on the
+common subset scored by every method; the seen and unseen tables come from
+`analysis/benchmark/run_unseen_benchmark.sh`. See `analysis/benchmark/README.md`
+for the full pipeline.
 
 ---
 
@@ -272,6 +292,26 @@ pip install -e lncRNA-Py/
 ```bash
 bash scripts/run_lncrnabert.sh      # usage in the script header
 ```
+
+---
+
+## Figures and tables
+
+Every figure and table of the paper and the supplement is rendered from the experiment and
+benchmark outputs by one command, which also writes `figures_manifest.json` (the inputs and
+outputs of each figure):
+
+```bash
+python -m analysis.figures --release 49 \
+    --exp_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --benchmark_dir gencode_v49_experiments/benchmark_comparison \
+    --out figures/g49 [--only NAME ...]
+```
+
+`--only` takes `benchmark_table`, `benchmark_supplement`, `dataset_composition`, `frechet`,
+`interpretability_main`, `patching`, `ablations` and `latent_probing`. The unseen and seen benchmark
+folders (`benchmark_unseen_v46`, `benchmark_seen_v46`, cutoff `--unseen_cutoff`, default 46) are
+read as siblings of `--benchmark_dir`.
 
 ---
 

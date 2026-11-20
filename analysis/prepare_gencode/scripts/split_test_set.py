@@ -12,11 +12,11 @@ shuffle (no length, no gene grouping), kept to reproduce older splits.
 Outputs four FASTA files and a JSON manifest with split statistics.
 
 Usage:
-    python split_test_set.py \
-        --lnc_fasta data/lnc_cdhit.fa \
-        --pc_fasta  data/pc_cdhit.fa  \
-        --output_dir data/splits/      \
-        --test_size 0.05               \
+    python analysis/prepare_gencode/scripts/split_test_set.py \
+        --lnc_fasta data/cdhit_clusters/g49_lncRNA_clustered.fa \
+        --pc_fasta  data/cdhit_clusters/g49_pc_clustered.fa \
+        --output_dir data/split_gencode_49 \
+        --test_size 0.05 \
         --seed 42
 """
 
