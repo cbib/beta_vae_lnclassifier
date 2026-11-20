@@ -20,7 +20,11 @@ Usage:
   python scripts/pipeline_audit.py --config configs/beta_vae_subgroup_base_g49.json \
       [--exp_root .] [--benchmark_dir gencode_v49_experiments/benchmark_comparison] \
       [--raw_nonb2 data/nonb2_te_raw/nonb2_features_v49_fixed.csv] \
-      [--stages config,split,features,leakage,scalers,model,layers] [--out audit_g49]
+      [--stages config,split,features,leakage,scalers,model,layers] [--out audit_g49] \
+      [--path_map OLD=NEW ...]
+--path_map rewrites OLD to NEW (plain substring) in every path the audit reads from the config,
+from checkpoint configs and from the layers manifest, so results written under old folder
+names are audited under the current ones. Repeat it for several renames; applied in order.
 Stages that need absent inputs (no checkpoints yet, no layers yet) are SKIPPED, not failed.
 """
 from __future__ import annotations
@@ -124,11 +128,23 @@ def find_key(obj, names):
 
 
 # ------------------------------------------------------------------ context
+def parse_path_map(items) -> list:
+    out = []
+    for it in items or []:
+        old, sep, new = it.partition("=")
+        if not sep or not old:
+            sys.exit(f"ERROR: --path_map expects OLD=NEW, got {it!r}")
+        out.append((old, new))
+    return out
+
+
 class Ctx:
     def __init__(self, a):
         self.a = a
         self.cfg_path = a.config
-        self.cfg = json.load(open(a.config))
+        self.path_map = parse_path_map(getattr(a, "path_map", None))
+        self.path_map_hits = {old: 0 for old, _ in self.path_map}
+        self.cfg = self.remap(json.load(open(a.config)))
         self.d = self.cfg.get("data", {})
         self.t = self.cfg.get("training", {})
         self.root = Path(a.exp_root)
@@ -141,6 +157,20 @@ class Ctx:
         self.feat_csvs = {}   # label -> path
         self.banks = {}       # block -> (csv label, bank path)
         self.frames = {}      # label -> DataFrame (cached)
+
+    def remap(self, x):
+        """Apply --path_map to every string (keys and values) of a JSON-like object."""
+        if isinstance(x, str):
+            for old, new in self.path_map:
+                if old in x:
+                    x = x.replace(old, new)
+                    self.path_map_hits[old] += 1
+            return x
+        if isinstance(x, dict):
+            return {self.remap(k): self.remap(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [self.remap(v) for v in x]
+        return x
 
     def load_fastas(self):
         keys = {"lnc_trainval": "lnc_fasta", "pc_trainval": "pc_fasta",
@@ -530,7 +560,7 @@ def stage_model(c: Ctx):
                     if hasattr(v, "isfinite") and v.dtype.is_floating_point and not bool(v.isfinite().all()):
                         bad += 1; break
             if isinstance(obj, dict) and isinstance(obj.get("config"), dict):
-                cd = obj["config"].get("data", {})
+                cd = c.remap(obj["config"].get("data", {}))
                 diff = [k for k in ("nonb2_csv", "lnc_fasta", "nonb2_scaler_bank_path") if k in cd and cd[k] != c.d.get(k)]
                 if diff:
                     rec("FAIL", "model", "ckpt_config", f"{Path(p).name} was trained with different {diff}")
@@ -586,12 +616,14 @@ def stage_layers(c: Ctx):
     if not mans:
         rec("FAIL", "layers", "manifest", "no run_manifest_*.json: results cannot be tied to checkpoints")
     else:
-        m = json.load(open(mans[-1]))
+        m = c.remap(json.load(open(mans[-1])))
         stale = [Path(p).name for p in ck if m.get("checkpoints", {}).get(p) != sha16(p) and m.get("checkpoints", {}).get(str(Path(p))) != sha16(p)]
         rec("FAIL" if stale else "PASS", "layers", "manifest_checkpoints",
             f"{len(stale)} checkpoints differ from those the layers ran on {stale[:3]}" if stale else f"{Path(mans[-1]).name}: all {len(ck)} checkpoint hashes match")
         if Path(m.get("config", "")).exists():
             rec("PASS" if sha16(m["config"]) == m.get("config_sha") else "FAIL", "layers", "manifest_config", "config unchanged since the layers ran" if sha16(m["config"]) == m.get("config_sha") else "config changed after layers ran")
+        elif m.get("config"):
+            rec("WARN", "layers", "manifest_config", f"config named in the manifest not found: {m['config']} (renamed folder? add --path_map OLD=NEW)")
         if m.get("git_dirty"):
             rec("WARN", "layers", "git_dirty", "layers ran on an uncommitted working tree")
     newest_ck = max((os.path.getmtime(p) for p in ck), default=0)
@@ -605,15 +637,26 @@ def stage_layers(c: Ctx):
         except Exception:
             continue
         num = df.select_dtypes("number")
-        if not np.isfinite(num.to_numpy(float)).all():
-            nonfin.append(Path(p).name)
+        if "group" in df.columns:             # unmatched baselines have no pairs: pair-difference means are undefined
+            um = df["group"].astype(str).str.contains("unmatched").to_numpy()[:, None]
+            pc = np.array([c_.startswith("mean_abs_") for c_ in num.columns])[None, :]
+            num = num.mask(pd.DataFrame(um & pc, index=num.index, columns=num.columns), 0.0)
+        bad_cols = [c_ for c_ in num.columns if not np.isfinite(num[c_].to_numpy(float)).all()]
+        if bad_cols:
+            nonfin.append(f"{Path(p).name}:" + ",".join(
+                f"{c_}({int((~np.isfinite(num[c_].to_numpy(float))).sum())})" for c_ in bad_cols[:3]))
         for col in num.columns:
-            if "iia" in col.lower() and ((num[col] < -1e-9) | (num[col] > 1 + 1e-9)).any():
+            cl = col.lower()
+            if "iia" not in cl or cl.startswith(("n_", "num_")) or cl.endswith(("_count", "_n")):
+                continue                      # counts are not rates
+            # a difference of two IIA values (excess over noise, delta, ...) lies in [-1, 1]; IIA itself in [0, 1]
+            lo = -1.0 if any(w in cl for w in ("excess", "delta", "diff", "over_noise", "minus")) else 0.0
+            if ((num[col] < lo - 1e-9) | (num[col] > 1 + 1e-9)).any():
                 iia_bad.append(f"{Path(p).name}:{col}")
     rec("INFO", "layers", "n_csv", f"{len(csvs)} result CSVs")
     rec("FAIL" if old else "PASS", "layers", "results_age", f"{len(old)} result CSVs older than the newest checkpoint {old[:3]}" if old else "all result CSVs are newer than the checkpoints")
-    rec("FAIL" if nonfin else "PASS", "layers", "finite", f"non-finite numbers in {nonfin[:4]}" if nonfin else "all numeric results finite")
-    rec("FAIL" if iia_bad else "PASS", "layers", "iia_range", f"IIA outside [0,1]: {iia_bad[:3]}" if iia_bad else "IIA columns within [0,1]")
+    rec("FAIL" if nonfin else "PASS", "layers", "finite", f"non-finite numbers in {nonfin[:4]} (column(count))" if nonfin else "all numeric results finite")
+    rec("FAIL" if iia_bad else "PASS", "layers", "iia_range", f"IIA outside its range ([0,1]; [-1,1] for differences): {iia_bad[:3]}" if iia_bad else "IIA columns within range ([0,1]; [-1,1] for differences)")
     if DEGENERATE:
         subs = {v["subgroup"] for v in DEGENERATE.values()}
         hit = defaultdict(list)
@@ -632,6 +675,13 @@ def stage_layers(c: Ctx):
         rec("INFO", "layers", "degenerate_subgroup", "no degenerate subgroup recorded (run the features stage in the same call to cross-check)")
 
 
+def report_path_map(c: Ctx) -> None:
+    for old, new in c.path_map:
+        n = c.path_map_hits[old]
+        rec("INFO" if n else "WARN", "config", "path_map",
+            f"{old} -> {new}: {n} strings rewritten" if n else f"{old} -> {new}: matched no path (typo?)")
+
+
 # ------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -643,6 +693,9 @@ def main():
     ap.add_argument("--stages", default=",".join(ALL_STAGES))
     ap.add_argument("--out", default="pipeline_audit")
     ap.add_argument("--fail_on_warn", action="store_true")
+    ap.add_argument("--path_map", action="append", default=[], metavar="OLD=NEW",
+                    help="rewrite OLD to NEW in every path read from the config, checkpoint "
+                         "configs and the layers manifest (repeatable)")
     a = ap.parse_args()
     c = Ctx(a)
     c.load_fastas()
@@ -656,8 +709,10 @@ def main():
                 fns[s](c)
             except Exception as e:
                 rec("FAIL", s, "crashed", f"{type(e).__name__}: {e}")
+    report_path_map(c)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    (out / "audit.json").write_text(json.dumps({"config": a.config, "results": RES, "degenerate": DEGENERATE}, indent=2))
+    (out / "audit.json").write_text(json.dumps({"config": a.config, "path_map": c.path_map,
+                                                "results": RES, "degenerate": DEGENERATE}, indent=2))
     n = defaultdict(int)
     for r in RES:
         n[r["level"]] += 1

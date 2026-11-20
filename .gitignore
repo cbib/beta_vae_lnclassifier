@@ -47,3 +47,5 @@ cpc2/
 Orthrus*
 rnasamba*
 gencode_release_index/
+audit_*/
+pipeline_audit/
