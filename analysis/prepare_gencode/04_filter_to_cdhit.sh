@@ -3,8 +3,8 @@ set -e
 
 GENCODE_VERSION=${GENCODE_VERSION:-49}
 BIOTYPE_CSV="data/processed/g${GENCODE_VERSION}_dataset_biotypes.csv"
-LNC_FASTA="data/cdhit_clusters/lnc_clustered.fa"
-PC_FASTA="data/cdhit_clusters/g47_pc_clustered.fa"
+LNC_FASTA="data/cdhit_clusters/g${GENCODE_VERSION}_lncRNA_clustered.fa"
+PC_FASTA="data/cdhit_clusters/g${GENCODE_VERSION}_pc_clustered.fa"
 OUTPUT_CSV="data/processed/g${GENCODE_VERSION}_dataset_biotypes_cdhit.csv"
 
 echo "=========================================="
@@ -25,7 +25,7 @@ if [ ! -f "${LNC_FASTA}" ] || [ ! -f "${PC_FASTA}" ]; then
     echo "  ${LNC_FASTA}"
     echo "  ${PC_FASTA}"
     echo ""
-    echo "Please run 03_run_cdhit.sh first"
+    echo "Please run scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh first (sbatch, repo root)"
     exit 1
 fi
 

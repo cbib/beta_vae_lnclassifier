@@ -12,9 +12,9 @@ Training and analysis code for β-VAE-based lncRNA classification, as described 
 
 The central architecture is **BetaVAESubgroup**: a β-VAE with cross-modal
 multi-head attention over explicit, registry-driven feature-group tokens.
-Sequence is encoded by a CNN into a latent representation; locus-derived
-features are projected into a set of named tokens and fused with the
-sequence representation via cross-modal attention before classification.
+Sequence is encoded by a CNN into a latent representation; feature tables are
+projected into a set of named tokens and fused with the sequence representation
+via cross-modal attention before classification.
 
 Feature tokens are organised into three biological blocks, defined in
 `data/feature_registry.py`:
@@ -22,8 +22,15 @@ Feature tokens are organised into three biological blocks, defined in
 | Block | Subgroups | Features | Source |
 |-------|-----------|----------|--------|
 | NonB  | 9  (APR, DR, GQ, IR, MR, STR, TRI, Z, GLOBAL) | 178 | Genomic non-B DNA motifs (`genomic` source in all reported models) |
-| REP (internal key `te`) | 6 (REP_CORE, REP_LCTR, REP_QUALITY, REP_PSEUDO, REP_UNKNOWN, REP_GLOBAL) | 170 | Repeat element composition |
+| REP (internal key `te`) | 6 (REP_CORE, REP_LCTR, REP_QUALITY, REP_PSEUDO, REP_UNKNOWN, REP_GLOBAL) | 170 | Repeat element composition, genomic locus and spliced transcript (`both`) |
 | NonB2 | 5 (RG4, SS_STAB, SS_COUNT, SS_RELPOS, SS_BINNED) | 63 | RNA secondary structure / G-quadruplex, spliced transcript |
+
+**Feature origins.** Some features differ when a tool runs on the genomic locus
+or on the spliced transcript, so NonB and REP are computed on both.
+`data/processed_features_genomic/` holds the locus runs (and the NonB2 tables),
+`data/processed_features/` the spliced-transcript runs. NonB2 is
+transcript-level only. Reported models read NonB from the locus runs
+(`nonb: genomic`) and REP from both.
 
 The feature source of each block can be overridden per experiment with
 `model.block_sources` (e.g. `{"nonb": "genomic"}`). Omitted entries fall back
@@ -37,25 +44,14 @@ config keys — model code (`models/beta_vae_subgroup.py`,
 
 A **Feature-Only** variant (`models/feature_only_classifier.py`) removes the
 sequence encoder entirely, using a learned class token as the attention
-query over the same feature tokens. This isolates locus-feature contribution
+query over the same feature tokens. This isolates the feature contribution
 from sequence-derived signal and is used as an interpretability baseline.
 
-### Earlier architectures (still available, not under active development)
+### Earlier architectures
 
-Three earlier single-modality/pre-registry architectures remain in the
-repository and are still functional:
-
-- **β-VAE + Contrastive Learning** — sequence-only model with biotype-aware
-  contrastive loss (`src/main_contrastive.py`)
-- **β-VAE + Genomic Features** — integrates TE and non-B DNA features
-  alongside sequence, without cross-modal attention (`src/main_features.py`)
-- **β-VAE + Genomic Features + Cross-Attention** — earlier fixed two-block
-  (TE/NonB) predecessor of BetaVAESubgroup (`src/main_features_attn.py`)
-
-These are not being extended further, but their post-training analysis
-pipeline (UMAP, spatial clustering, biotype enrichment — see
-`analysis/post_training_pipeline/README.md`) remains available for anyone
-reproducing that earlier line of work.
+The sequence-only contrastive model, the two fixed-block feature models and
+their UMAP and spatial-clustering analysis are no longer in the main branch.
+The tagged releases `v1.0.0` and `v2.0.0` reproduce them.
 
 ---
 
@@ -65,26 +61,25 @@ reproducing that earlier line of work.
 beta_vae_lnclassifier/
 ├── src/                          # Training entry points
 │   ├── main_subgroup.py          # BetaVAESubgroup, 5-fold CV
-│   ├── main_subgroup_debug.py    # BetaVAESubgroup, single 80/20 split
-│   ├── main_feature_only.py      # Feature-Only variant
-│   ├── main_contrastive.py       # earlier: sequence-only contrastive
-│   ├── main_features.py          # earlier: fixed TE/NonB, no attention
-│   └── main_features_attn.py     # earlier: fixed TE/NonB, with attention
+│   └── main_feature_only.py      # Feature-Only variant
 ├── models/                       # Model definitions
 │   ├── beta_vae_subgroup.py
 │   ├── feature_only_classifier.py
 │   ├── subgroup_projector.py
-│   ├── gradient_reversal.py
-│   └── token_self_attention.py
-├── trainers/                     # Trainers, CV utilities, loss functions
-├── data/                         # Data loading, preprocessing, feature registry
+│   └── model_builder.py
+├── trainers/                     # Trainer and CV loop
+├── data/                         # Data loading, feature scaling, feature registry
 │   └── feature_registry.py       # single source of truth for block/subgroup structure
-├── configs/                      # JSON config files (one per experiment)
+├── configs/                      # One config per release and model
 ├── analysis/
+│   ├── evaluation/               # per-fold evaluation of trained checkpoints
+│   ├── figures/                  # every paper figure and table (python -m analysis.figures)
 │   ├── pattern/                  # interpretability pipeline (see README below)
-│   ├── benchmark/                # cross-method comparison + hard-for-all analysis
-│   └── post_training_pipeline/   # earlier UMAP/spatial-clustering pipeline
-├── scripts/                      # SLURM submission shells + data utilities
+│   ├── benchmark/                # cross-method comparison
+│   ├── prepare_gencode/          # GENCODE download, CD-HIT, splits
+│   └── triframe/                 # equivalence checks
+├── scripts/                      # prep, train, submit, layers, benchmark
+├── tests/
 ├── environment.yml
 ├── cdhit_env.yml
 └── lncrnabert_environment.yml
@@ -101,14 +96,13 @@ transcript-level splits shared genes between train and test (about 90% of
 test transcripts for GENCODE v47 and 92% for v49), which inflated test
 performance. The released splits have 0% gene overlap.
 
-- Splits live in `data/split_gencode_<v>_genegrouped/`; experiment outputs use
-  the `_genegrouped` suffix (e.g. `gencode_v49_experiments_genegrouped/`).
-- Configs ending in `_genegrouped.json` select these splits. CV folds are built
-  with `get_cv_splits_from_config`, which groups by gene.
+- Splits live in `data/split_gencode_<v>/`; experiment outputs in
+  `gencode_v<v>_experiments/`.
+- CV folds are built with `get_cv_splits_from_config`, which groups by gene.
 - Each model is scored on its own test set. Cross-method benchmarks
   additionally report a common subset of transcripts scored by every method.
-- Pre-audit transcript-level configs and results are kept for provenance only
-  (`configs/legacy/`) and are not used for any reported number.
+- The transcript-level splits and results of the earlier releases are in the
+  tags `v1.0.0` and `v2.0.0`; no reported number uses them.
 
 ---
 
@@ -127,6 +121,21 @@ cd beta_vae_lnclassifier
 conda env create -f environment.yml
 conda activate beta_lncrna
 ```
+
+`environment.yml` holds what the training, evaluation, interpretability and figure code imports, plus
+`pytest`; the CUDA 12.1 pins are those of the reported runs. On a machine without a GPU (tests,
+figures) create it without the CUDA lines:
+
+```bash
+grep -v -E "nvidia|pytorch-cuda|pytorch-mutex" environment.yml > /tmp/env_cpu.yml
+conda env create -f /tmp/env_cpu.yml
+```
+
+Other steps have their own environments: `cdhit_env.yml` (clustering), `lncrnabert_environment.yml`
+(lncRNA-BERT, see below) and, only for the equivalence checks in `analysis/triframe/`,
+triframe (see [Related repository](#related-repository)). The remaining benchmark tools are not part of this repository: CPAT (needs R)
+and CPC2 run inside `beta_lncrna`, LncDC in `lncdc`, Orthrus in `orthrus`, RNAsamba in a Singularity
+image; the header of `analysis/benchmark/run_benchmark_tools.sh` names each.
 
 ### 3. Set PYTHONPATH
 
@@ -153,25 +162,42 @@ a new DOI covering both will be added here at publication.
 ### Download and setup
 
 ```bash
-bash scripts/setup_data.sh
+bash scripts/setup_data.sh                 # download, verify the MD5 sums, unzip, check
+bash scripts/setup_data.sh --check-only    # only check that every file the configs name exists
 ```
 
-This downloads and extracts all required files into `data/` and prints the
-`DATA_ROOT` export command to add to your environment.
+The script downloads the three zip files of the deposit with checksum verification, unzips `data/`
+and the two `gencode_v<v>_experiments/` folders into the repository root, and ends with a check per
+release that every file named in `data.*` of the release's configs exists; it exits non-zero when one
+is missing. Run it from the repository root. That folder is `DATA_ROOT` for all other scripts
+(`export DATA_ROOT=$PWD`).
 
 ### Reproduce from raw GENCODE (optional)
+
+Run every command from the repository root. The steps below are for release 49; the two CD-HIT
+scripts (SLURM) carry the release number in their file names and must be edited for 47.
 
 ```bash
 conda env create -f cdhit_env.yml
 conda activate cdhit_env
 
-cd analysis/prepare_gencode/
-GENCODE_VERSION=47 bash run_all.sh       # or 49
+GENCODE_VERSION=49 bash analysis/prepare_gencode/run_all.sh   # download, biotypes, gene-biotype filter,
+                                                              # then submits scripts/run_{lnc,pc}_cdhit.sh
 ```
 
+When both jobs have finished (`data/cdhit_clusters/g49_lncRNA_clustered.fa` and
+`data/cdhit_clusters/g49_pc_clustered.fa`), run the remaining steps and the gene-grouped split:
+
 ```bash
-DO_SPLIT=1 TEST_SIZE=0.05 GENCODE_VERSION=47 bash run_all.sh   # gene-grouped split
+GENCODE_VERSION=49 bash analysis/prepare_gencode/04_filter_to_cdhit.sh
+GENCODE_VERSION=49 bash analysis/prepare_gencode/06_sanity_check.sh
+python analysis/prepare_gencode/scripts/split_test_set.py \
+    --lnc_fasta data/cdhit_clusters/g49_lncRNA_clustered.fa \
+    --pc_fasta  data/cdhit_clusters/g49_pc_clustered.fa \
+    --output_dir data/split_gencode_49 --test_size 0.05 --seed 42
 ```
+
+See `analysis/prepare_gencode/README.md` for the steps and their outputs.
 
 ---
 
@@ -186,33 +212,32 @@ use the `DATA_ROOT` environment variable:
 export DATA_ROOT=/path/to/root
 ```
 
-### BetaVAESubgroup (primary architecture)
+### Pipeline for one release
+
+Run from the repository root with `DATA_ROOT` set.
 
 ```bash
-# Full 5-fold gene-grouped CV
-python src/main_subgroup.py --config configs/beta_vae_subgroup_g49_genegrouped.json --device cuda:0
+# Stage 0: fit the scaler banks and write the cleaned feature tables
+bash scripts/prep_features.sh 49 --te_csv FILE --nonb_csv FILE [--nonb2_csv FILE]
 
-# Fast single 80/20-split validation run
-python src/main_subgroup_debug.py --config configs/beta_vae_subgroup_g49_genegrouped.json --device cuda:0
+# Stages 1-2: BetaVAESubgroup (5-fold CV) and the Feature-Only variant
+sbatch scripts/train_beta_vae_subgroup.sh 49
+sbatch scripts/train_beta_vae_feature_only.sh 49
 
-# Feature-Only variant (no sequence encoder)
-python src/main_feature_only.py --config configs/beta_vae_feature_only_g49_genegrouped.json --device cuda:0
+# Everything with job dependencies (training, layers, benchmark)
+bash scripts/submit_pipeline.sh --release 49 [--skip train,feature_only_train,layers,benchmark] [--retrain] [--dry-run]
 ```
 
-For GENCODE v47 use `configs/beta_vae_subgroup_g47_genegrouped.json`.
+`submit_pipeline.sh` refuses to retrain a model that already has checkpoints
+unless `--retrain` is given. For GENCODE v47 use release `47`. Without SLURM,
+run the commands inside the scripts directly. The entry points are
+`src/main_subgroup.py` and `src/main_feature_only.py` (`--config`, `--device`).
 
-### Earlier architectures
-
-These use the original transcript-level splits and are not gene-disjoint.
+### Tests
 
 ```bash
-python -m src.main_contrastive   --config configs/beta_vae_contrastive_g47.json
-python -m src.main_features      --config configs/beta_vae_features_g47.json
-python -m src.main_features_attn --config configs/beta_vae_features_attn_g47.json
+python -m pytest -q          # CPU only, no data files or checkpoints
 ```
-
-SLURM submission scripts for each model type are in `scripts/`; run the
-commands inside them directly if SLURM isn't available.
 
 ---
 
@@ -237,42 +262,34 @@ Run the whole pipeline for one experiment with:
 bash scripts/layers.sh <experiment_dir> --config configs/<config>.json
 ```
 
-Stages (1.1–1.4, 2.1, 3.1–3.5, S.1–S.2) write to `<experiment_dir>/interpretability/`
+Stages (1.1–1.4 including 1.2b input ablation, 2.1, 3.1–3.5) write to `<experiment_dir>/interpretability/`
 and are resumable via `.done` markers keyed on the command signature.
 `--force` reruns everything, `--only <ids>` selects stages, `--dry-run` prints
 the plan. See `analysis/pattern/README.md` for script-by-script usage.
-
-### Earlier post-training pipeline (UMAP / spatial clustering / biotype enrichment)
-
-The earlier three architectures use a separate post-training pipeline
-(CV evaluation, UMAP, spatial clustering, biotype enrichment). See
-`analysis/post_training_pipeline/README.md` for full usage — unchanged from
-prior releases.
 
 ---
 
 ## Benchmark comparison
 
-On SLURM, `scripts/submit_benchmarks.sh` submits the per-release benchmark job
+On SLURM, `scripts/submit_pipeline.sh` submits the benchmark stage
 (`scripts/benchmark_job.sh`). Direct invocation:
 
 ```bash
 bash analysis/benchmark/run_full_benchmark.sh \
     --release v49 \
-    --base_dir gencode_v49_experiments_genegrouped \
-    --lnc_fasta data/split_gencode_49_genegrouped/lnc_test.fa \
-    --pc_fasta  data/split_gencode_49_genegrouped/pc_test.fa \
-    --blnc_predictions gencode_v49_experiments_genegrouped/beta_vae_subgroup_base_g49_genegrouped/evaluation_csvs/test_predictions.csv
+    --base_dir gencode_v49_experiments \
+    --lnc_fasta data/split_gencode_49/lnc_test.fa \
+    --pc_fasta  data/split_gencode_49/pc_test.fa \
+    --blnc_predictions gencode_v49_experiments/beta_vae_subgroup_base_g49/evaluation_csvs/test_predictions.csv
 ```
 
 Compares against CPAT, CPC2, LncDC, RNAsamba, Orthrus (4-track), and
-lncRNA-BERT, reporting accuracy/precision/recall/F1 with 95% gene-clustered
-bootstrap confidence intervals (10,000 resamples) and AUC with 95% DeLong CI
-per method. Results are given on the full test set and on the common subset
-scored by every method. See `analysis/benchmark/README.md` for the full pipeline and
-`analysis/benchmark/hard_for_all/` for the cross-method hard-case
-analysis (transcripts hard for every benchmarked method, or a
-configurable subset — see that README for the threshold option).
+lncRNA-BERT. Macro-F1, accuracy and AUC carry 95% gene-clustered percentile
+bootstrap confidence intervals (10,000 resamples, seed 42; all isoforms of a
+drawn gene come along). Results are given on the full test set and on the
+common subset scored by every method; the seen and unseen tables come from
+`analysis/benchmark/run_unseen_benchmark.sh`. See `analysis/benchmark/README.md`
+for the full pipeline.
 
 ---
 
@@ -282,14 +299,54 @@ Used zero-shot (pretrained weights, no fine-tuning).
 
 ```bash
 git clone https://github.com/luukromeijn/lncRNA-Py
+cp -r lncRNA-Py/lncrnapy .          # the package, run from the repository root (git-ignored)
 conda env create -f lncrnabert_environment.yml
-conda activate lncrnabert_env
-pip install -e lncRNA-Py/
+conda activate lncrnabert
+python -c "import lncrnapy"         # check, from the repository root
 ```
 
+lncRNA-Py has no `setup.py`, so it is not pip-installable. Instead of copying the package, you can
+leave it in the clone and pass `--workdir lncRNA-Py` to `scripts/run_lncrnabert.sh`
+(`--lncrnabert_workdir` to `analysis/benchmark/run_benchmark_tools.sh`).
+
 ```bash
-sbatch scripts/lncRNABERT_slurm.sh
-python analysis/lncrnabert_inference.py
+bash scripts/run_lncrnabert.sh      # usage in the script header
+```
+
+---
+
+## Figures and tables
+
+Every figure and table of the paper and the supplement is rendered from the experiment and
+benchmark outputs by one command, which also writes `figures_manifest.json` (the inputs and
+outputs of each figure):
+
+```bash
+python -m analysis.figures --release 49 \
+    --exp_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --benchmark_dir gencode_v49_experiments/benchmark_comparison \
+    --out figures/g49 [--only NAME ...]
+```
+
+`--only` takes `benchmark_table`, `benchmark_supplement`, `dataset_composition`, `frechet`,
+`interpretability_main`, `patching`, `ablations` and `latent_probing`. The unseen and seen benchmark
+folders (`benchmark_unseen_v46`, `benchmark_seen_v46`, cutoff `--unseen_cutoff`, default 46) are
+read as siblings of `--benchmark_dir`.
+
+---
+
+## Related repository
+
+[triframe](https://github.com/cbib/triframe) is the domain-independent core of the three-layer
+analysis used here (ablation and probing, Fréchet geometry, interchange-intervention patching);
+β-LNC is its case study. `analysis/triframe/` checks that triframe, driven through an independent
+adapter, reproduces the β-LNC results (`bash scripts/triframe_equivalence.sh`; see
+`analysis/triframe/README_triframe_link.md`). triframe is installed from its repository, next to
+this one:
+
+```bash
+git clone https://github.com/cbib/triframe.git
+pip install -e triframe          # inside the beta_lncrna environment
 ```
 
 ---

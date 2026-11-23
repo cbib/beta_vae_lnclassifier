@@ -3,18 +3,20 @@
 Complete pipeline to prepare GENCODE data for lncRNA vs protein-coding classification. Proof-tested for v47 and v49.
 
 ## Quick Start
+
+Run every command from the repository root.
 ```bash
-# Run entire pipeline
-bash run_all.sh
+# Run steps 0-3 (submits the CD-HIT jobs, then stops)
+bash analysis/prepare_gencode/run_all.sh
 
 # Or run steps individually
-bash 00_download_gencode.sh
-bash 01_extract_biotypes.sh
-bash 02_filter_gene_biotypes.sh
-bash 03_run_cdhit.sh          # Submit to SLURM or
-bash 04_filter_to_cdhit.sh
-bash 05_create_visualizations.sh
-bash 06_sanity_check.sh
+bash analysis/prepare_gencode/00_download_gencode.sh
+bash analysis/prepare_gencode/01_extract_biotypes.sh
+bash analysis/prepare_gencode/02_filter_gene_biotypes.sh
+sbatch scripts/run_lnc_cdhit.sh && sbatch scripts/run_pc_cdhit.sh   # SLURM
+bash analysis/prepare_gencode/04_filter_to_cdhit.sh
+bash analysis/prepare_gencode/05_create_visualizations.sh
+bash analysis/prepare_gencode/06_sanity_check.sh
 ```
 
 ## Pipeline Overview
@@ -42,7 +44,7 @@ conda activate cdhit_env
 
 Downloads GTF annotation and transcript FASTA files from GENCODE FTP.
 ```bash
-bash 00_download_gencode.sh
+bash analysis/prepare_gencode/00_download_gencode.sh
 ```
 
 **Output**:
@@ -56,7 +58,7 @@ bash 00_download_gencode.sh
 
 Parses GTF to create a CSV mapping transcript IDs to biotypes.
 ```bash
-bash 01_extract_biotypes.sh
+bash analysis/prepare_gencode/01_extract_biotypes.sh
 ```
 
 **Output**:
@@ -70,7 +72,7 @@ bash 01_extract_biotypes.sh
 
 Filters to transcripts from lncRNA or protein_coding genes only.
 ```bash
-bash 02_filter_gene_biotypes.sh
+bash analysis/prepare_gencode/02_filter_gene_biotypes.sh
 ```
 
 **Output**:
@@ -97,27 +99,23 @@ conda activate cdhit_env
 cd-hit-est -h
 ```
 
-**Run clustering**:
+**Run clustering** (from the repo root; one SLURM job per class, they can run at the same time):
 ```bash
-# With default settings (16 CPUs)
-bash 03_run_cdhit.sh
-
-# Or specify number of CPUs
-CDHIT_CPUS=32 bash 03_run_cdhit.sh
+sbatch scripts/run_lnc_cdhit.sh
+sbatch scripts/run_pc_cdhit.sh
 ```
 
 **Parameters**:
 - Identity threshold: 90% (`-c 0.9`)
 - Alignment coverage: 80% of shorter sequence (`-aS 0.8`)
 - Word size: 8 (`-n 8`)
-- Greedy mode: enabled (`-g 1`) for speed
+- Fast greedy mode (`-g 0`), band width 20 (`-b 20`), length-difference cutoff 0.9 (`-s 0.9`)
 
 **Output**:
-- `data/cdhit_clusters/lnc_clustered.fa` (~160k sequences)
-- `data/cdhit_clusters/g47_pc_clustered.fa` (~145k sequences)
+- `data/cdhit_clusters/g49_lncRNA_clustered.fa` (~160k sequences)
+- `data/cdhit_clusters/g49_pc_clustered.fa` (~145k sequences)
 - `data/cdhit_clusters/*.clstr` (cluster information)
-- `logs/cdhit_lnc.log` (lncRNA clustering log)
-- `logs/cdhit_pc.log` (PC clustering log)
+- `logs/v49_lnc_cdhit.log`, `logs/v49_pc_cdhit.log` (SLURM logs)
 
 **Note**: PC takes longer due to longer sequences (max ~109kb vs ~50kb for lncRNA)
 
@@ -127,7 +125,7 @@ CDHIT_CPUS=32 bash 03_run_cdhit.sh
 
 Matches biotype CSV to transcripts retained after CD-HIT.
 ```bash
-bash 04_filter_to_cdhit.sh
+bash analysis/prepare_gencode/04_filter_to_cdhit.sh
 ```
 
 **Output**:
@@ -140,7 +138,7 @@ bash 04_filter_to_cdhit.sh
 
 Generates the figures of dataset composition.
 ```bash
-bash 05_create_visualizations.sh
+bash analysis/prepare_gencode/05_create_visualizations.sh
 ```
 
 **Output**:
@@ -153,7 +151,7 @@ bash 05_create_visualizations.sh
 
 Validates final dataset before training.
 ```bash
-bash 06_sanity_check.sh
+bash analysis/prepare_gencode/06_sanity_check.sh
 ```
 
 **Checks**:
@@ -178,10 +176,10 @@ data/
 │   ├── gencode.v49.lncRNA_transcripts.fa
 │   └── gencode.v49.pc_transcripts.fa
 ├── cdhit_clusters/                                  # CD-HIT output
-│   ├── lnc_clustered.fa
-│   ├── lnc_clustered.fa.clstr
-│   ├── pc_clustered.fa
-│   └── pc_clustered.fa.clstr
+│   ├── g49_lncRNA_clustered.fa
+│   ├── g49_lncRNA_clustered.fa.clstr
+│   ├── g49_pc_clustered.fa
+│   └── g49_pc_clustered.fa.clstr
 └── processed/                              # Final dataset
     ├── g49_dataset_biotypes_cdhit.csv
     └── sanity_check/
@@ -204,7 +202,7 @@ GENCODE_VERSION=49 bash run_all.sh
 
 ### Different CD-HIT Threshold
 ```bash
-# Edit 03_run_cdhit.sh
+# Edit scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh
 cd-hit-est \
     -c 0.95 \  # Change from 0.9 to 0.95 for 95% identity
     # ... rest of params
@@ -212,9 +210,9 @@ cd-hit-est \
 
 ### Local Execution (no SLURM)
 ```bash
-# Edit 03_run_cdhit.sh - remove SBATCH directives
-# Run directly:
-bash 03_run_cdhit.sh
+# Edit scripts/run_lnc_cdhit.sh and scripts/run_pc_cdhit.sh - remove the SBATCH directives
+# and set -T by hand; then run them with bash from the repo root:
+bash scripts/run_lnc_cdhit.sh
 ```
 
 ## Troubleshooting
@@ -228,7 +226,7 @@ cd-hit-est -h
 
 ### Memory issues during CD-HIT
 ```bash
-# Increase memory limit in 03_run_cdhit.sh
+# Increase memory limit in scripts/run_pc_cdhit.sh
 #SBATCH --mem=128G  # Increase from 64G
 # You can also increase cpus per thread
 #SBATCH --cpus-per-task=16
@@ -237,7 +235,7 @@ cd-hit-est -h
 ### Biotype matching failures
 ```bash
 # Check transcript ID format matches between FASTA and CSV
-head -1 data/cdhit/lnc_clustered.fa
+head -1 data/cdhit_clusters/g49_lncRNA_clustered.fa
 head -2 data/processed/gencode49_dataset_biotypes.csv
 ```
 

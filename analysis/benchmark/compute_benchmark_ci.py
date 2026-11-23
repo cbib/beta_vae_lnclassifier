@@ -3,11 +3,10 @@
 """
 analysis/benchmark/compute_benchmark_ci.py
 
-Adds 95% bootstrap CI (F1, n=10,000 resamples by default) and 95% DeLong CI
-(AUC) to the benchmark comparison, matching the reporting standard used in
-the submitted classification paper's Table 1. compare_models.py computes
-only point estimates (accuracy/precision/recall/F1); this script is
-additive — it does not modify compare_models.py — and mirrors its argument
+Adds 95% gene-clustered percentile bootstrap CIs (macro-F1, accuracy, AUC;
+10,000 resamples by default; all isoforms of a drawn gene come along) to the
+benchmark comparison. compare_models.py computes only point estimates
+(accuracy/precision/recall/F1); this script is additive — it does not modify compare_models.py — and mirrors its argument
 names and ID-normalization convention exactly, so it can be grafted into
 run_full_benchmark.sh as an additional stage right after compare_models.py,
 reusing the same per-method CLI flags and file paths that stage already
@@ -36,7 +35,7 @@ Per-method score conventions (probability of the POSITIVE class, pc/mRNA)
 Pipeline integration (run_full_benchmark.sh)
 ---------------------------------------------
 Intended to be called as Stage 2.5, immediately after compare_models.py and
-before upset_benchmark.py, with the SAME COMPARE_ARGS-derived file paths
+before ensemble_vs_models.py, with the SAME COMPARE_ARGS-derived file paths
 already assembled by that stage's per-method [[ -f ... ]] checks — i.e. the
 shell script only needs to pass this script whichever --*_csv/--*_tsv flags
 it already decided to pass to compare_models.py, unchanged.
@@ -44,9 +43,9 @@ it already decided to pass to compare_models.py, unchanged.
 Output
 ------
 <output_dir>/benchmark_table_with_ci.csv
-  method, n_samples, accuracy, precision, recall,
-  f1, f1_ci_low, f1_ci_high,
-  auc, auc_ci_low, auc_ci_high
+  method, n_samples, n_genes, accuracy, precision, recall, f1, auc,
+  f1_gene_ci_low/high, acc_gene_ci_low/high, auc_gene_ci_low/high
+  (plus per-class counts, recall and precision)
 Sorted by F1 descending. Exits non-zero if zero methods could be evaluated.
 
 Usage
@@ -60,6 +59,8 @@ python analysis/benchmark/compute_benchmark_ci.py \\
     --rnasamba_tsv    gencode_v49_experiments/benchmark_tools/rnasamba_results.tsv \\
     --orthrus_csv     gencode_v49_experiments/benchmark_tools/orthrus/orthrus_test_predictions.csv \\
     --lncrnabert_csv  gencode_v49_experiments/benchmark_tools/lncrnabert_test_predictions.csv \\
+    --test_lnc_fasta  data/split_gencode_49/lnc_test.fa \\
+    --test_pc_fasta   data/split_gencode_49/pc_test.fa \\
     --n_bootstrap     10000 \\
     --output_dir      gencode_v49_experiments/benchmark_comparison
 """
@@ -234,25 +235,8 @@ LOADERS = {
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap CI (F1) — n_bootstrap resamples with replacement, percentile CI
+# Gene-clustered percentile bootstrap (macro-F1, accuracy, AUC)
 # ---------------------------------------------------------------------------
-
-def bootstrap_f1_ci(y_true: np.ndarray, y_pred: np.ndarray,
-                    n_bootstrap: int, rng: np.random.Generator,
-                    ci: float = 0.95) -> tuple[float, float, float]:
-    n = len(y_true)
-    point = f1_score(y_true, y_pred, average="macro", zero_division=0)
-
-    boot_scores = np.empty(n_bootstrap)
-    for b in range(n_bootstrap):
-        idx = rng.integers(0, n, size=n)
-        boot_scores[b] = f1_score(y_true[idx], y_pred[idx],
-                                   average="macro", zero_division=0)
-
-    alpha = (1 - ci) / 2
-    lo, hi = np.quantile(boot_scores, [alpha, 1 - alpha])
-    return point, float(lo), float(hi)
-
 
 def cluster_bootstrap(y_true, y_pred, y_score, genes, n_bootstrap, rng, ci=0.95):
     """Resample GENES with replacement (all isoforms of a drawn gene come
@@ -277,81 +261,19 @@ def cluster_bootstrap(y_true, y_pred, y_score, genes, n_bootstrap, rng, ci=0.95)
 
 
 # ---------------------------------------------------------------------------
-# DeLong CI (AUC) — analytic, matches submitted paper's "95% DeLong CI"
-# ---------------------------------------------------------------------------
-
-def _delong_variance(y_true: np.ndarray, y_score: np.ndarray) -> tuple[float, float]:
-    """
-    DeLong variance estimator for a single ROC AUC via the structural
-    components / placement-values method (Sun & Xu, 2014; equivalent to
-    the original DeLong et al. 1988 covariance approach for one
-    classifier). Returns (auc, variance).
-    """
-    y_true = np.asarray(y_true)
-    y_score = np.asarray(y_score, dtype=float)
-
-    pos = y_score[y_true == 1]
-    neg = y_score[y_true == 0]
-    m, n = len(pos), len(neg)
-    if m == 0 or n == 0:
-        return float("nan"), float("nan")
-
-    def midrank(x: np.ndarray) -> np.ndarray:
-        order = np.argsort(x, kind="mergesort")
-        ranks = np.empty(len(x))
-        sorted_x = x[order]
-        i = 0
-        while i < len(x):
-            j = i
-            while j < len(x) - 1 and sorted_x[j + 1] == sorted_x[i]:
-                j += 1
-            ranks[order[i:j + 1]] = 0.5 * (i + j) + 1
-            i = j + 1
-        return ranks
-
-    combined = np.concatenate([pos, neg])
-    tx = midrank(pos)
-    ty = midrank(neg)
-    tz = midrank(combined)
-
-    v01 = (tz[:m] - tx) / n
-    v10 = 1.0 - (tz[m:] - ty) / m
-
-    auc = float(np.mean(v01))
-    s01 = np.var(v01, ddof=1) if m > 1 else 0.0
-    s10 = np.var(v10, ddof=1) if n > 1 else 0.0
-    var = s01 / m + s10 / n
-    return auc, var
-
-
-def delong_auc_ci(y_true: np.ndarray, y_score: np.ndarray,
-                  ci: float = 0.95) -> tuple[float, float, float]:
-    from scipy.stats import norm
-    auc, var = _delong_variance(y_true, y_score)
-    if np.isnan(auc):
-        return float("nan"), float("nan"), float("nan")
-    se = np.sqrt(max(var, 0.0))
-    z = norm.ppf(1 - (1 - ci) / 2)
-    lo = max(0.0, auc - z * se)
-    hi = min(1.0, auc + z * se)
-    return auc, float(lo), float(hi)
-
-
-# ---------------------------------------------------------------------------
 # Per-method pipeline
 # ---------------------------------------------------------------------------
 
 def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
                     threshold: float, n_bootstrap: int,
                     rng: np.random.Generator,
-                    gene_df: pd.DataFrame | None = None) -> dict | None:
+                    gene_df: pd.DataFrame) -> dict | None:
     merged = scores_df.merge(labels_df, on="id", how="inner")
-    if gene_df is not None:
-        merged = merged.merge(gene_df, on="id", how="left")
-        miss = merged["gene"].isna() | (merged["gene"] == "")
-        if miss.any():
-            # unknown gene -> its own cluster (conservative: no pooling)
-            merged.loc[miss, "gene"] = "NOGENE_" + merged.loc[miss, "id"]
+    merged = merged.merge(gene_df, on="id", how="left")
+    miss = merged["gene"].isna() | (merged["gene"] == "")
+    if miss.any():
+        # unknown gene -> its own cluster (conservative: no pooling)
+        merged.loc[miss, "gene"] = "NOGENE_" + merged.loc[miss, "id"]
     n_before, n_after = len(scores_df), len(merged)
     if n_after == 0:
         print(f"  ERROR: [{name}] zero overlap with canonical labels "
@@ -365,16 +287,14 @@ def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
     y_score = merged["y_score"].astype(float).values
     y_pred  = (y_score >= threshold).astype(int)
 
-    f1, f1_lo, f1_hi = bootstrap_f1_ci(y_true, y_pred, n_bootstrap, rng)
-    auc, auc_lo, auc_hi = delong_auc_ci(y_true, y_score)
-
-    extra = {}
-    if gene_df is not None:
-        (fl, fh), (al, ah), (ul, uh), G = cluster_bootstrap(
-            y_true, y_pred, y_score, merged["gene"].values, n_bootstrap, rng)
-        extra = dict(n_genes=G, f1_gene_ci_low=fl, f1_gene_ci_high=fh,
-                     acc_gene_ci_low=al, acc_gene_ci_high=ah,
-                     auc_gene_ci_low=ul, auc_gene_ci_high=uh)
+    from sklearn.metrics import roc_auc_score
+    f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    auc = float(roc_auc_score(y_true, y_score)) if 0 < y_true.sum() < len(y_true) else float("nan")
+    (fl, fh), (al, ah), (ul, uh), G = cluster_bootstrap(
+        y_true, y_pred, y_score, merged["gene"].values, n_bootstrap, rng)
+    extra = dict(n_genes=G, f1_gene_ci_low=fl, f1_gene_ci_high=fh,
+                 acc_gene_ci_low=al, acc_gene_ci_high=ah,
+                 auc_gene_ci_low=ul, auc_gene_ci_high=uh)
     per_class = {}
     for cname, cval in (("lnc", 0), ("pc", 1)):
         m = y_true == cval
@@ -387,8 +307,7 @@ def evaluate_method(name: str, scores_df: pd.DataFrame, labels_df: pd.DataFrame,
         accuracy=accuracy_score(y_true, y_pred),
         precision=precision_score(y_true, y_pred, average="macro", zero_division=0),
         recall=recall_score(y_true, y_pred, average="macro", zero_division=0),
-        f1=f1, f1_ci_low=f1_lo, f1_ci_high=f1_hi,
-        auc=auc, auc_ci_low=auc_lo, auc_ci_high=auc_hi,
+        f1=f1, auc=auc,
     )
 
 
@@ -586,10 +505,10 @@ def main():
     p.add_argument("--lncdc_csv",        default=None)
     p.add_argument("--lncdc_tsv",        default=None,
                    help="alias of --lncdc_csv (compare_models.py name)")
-    p.add_argument("--test_lnc_fasta",   default=None,
-                   help="test lncRNA FASTA; with --test_pc_fasta enables "
-                        "gene-clustered CIs (ENSG from headers)")
-    p.add_argument("--test_pc_fasta",    default=None)
+    p.add_argument("--test_lnc_fasta",   required=True,
+                   help="test lncRNA FASTA (ENSG from the headers drives the "
+                        "gene-clustered resampling)")
+    p.add_argument("--test_pc_fasta",    required=True, help="test mRNA FASTA")
     p.add_argument("--feelNc_tsv",       default=None, help="accepted and ignored")
     p.add_argument("--rnasamba_tsv",     default=None)
     p.add_argument("--orthrus_csv",      default=None)
@@ -642,20 +561,13 @@ def main():
         if labels_df.empty:
             sys.exit("ERROR: --id_list leaves no labelled transcripts")
 
-    gene_df = None
-    fastas = [f for f in (args.test_lnc_fasta, args.test_pc_fasta) if f]
-    if len(fastas) == 2:
-        gene_df = load_gene_map(fastas)
-        ng = gene_df.loc[gene_df.gene != "", "gene"].nunique()
-        print(f"  gene map: {len(gene_df)} test transcripts, {ng} genes")
-        ids = set(labels_df["id"])
-        miss = len(ids - set(gene_df["id"]))
-        if miss:
-            sys.exit(f"ERROR: {miss} labelled transcripts are not in the test "
-                     f"FASTAs -- predictions and FASTAs are from different splits")
-    else:
-        print("  WARNING: no test FASTAs given -> isoform-naive CIs only "
-              "(treats isoforms of one gene as independent)")
+    gene_df = load_gene_map([args.test_lnc_fasta, args.test_pc_fasta])
+    ng = gene_df.loc[gene_df.gene != "", "gene"].nunique()
+    print(f"  gene map: {len(gene_df)} test transcripts, {ng} genes")
+    miss = len(set(labels_df["id"]) - set(gene_df["id"]))
+    if miss:
+        sys.exit(f"ERROR: {miss} labelled transcripts are not in the test "
+                 f"FASTAs -- predictions and FASTAs are from different splits")
 
     thresholds = dict(DEFAULT_THRESHOLDS)
     if args.cpat_threshold is not None:
@@ -697,8 +609,8 @@ def main():
                 continue
             row["coverage"] = len(set(sdf["id"]) & set(labels_df["id"])) / len(labels_df)
             out.append(row)
-            print(f"  F1={row['f1']:.4f} [{row['f1_ci_low']:.4f}, {row['f1_ci_high']:.4f}]  "
-                  f"AUC={row['auc']:.4f} [{row['auc_ci_low']:.4f}, {row['auc_ci_high']:.4f}]")
+            print(f"  F1={row['f1']:.4f} [{row['f1_gene_ci_low']:.4f}, {row['f1_gene_ci_high']:.4f}]  "
+                  f"AUC={row['auc']:.4f} [{row['auc_gene_ci_low']:.4f}, {row['auc_gene_ci_high']:.4f}]")
         return out
 
     common_info = None
@@ -730,15 +642,23 @@ def main():
                  "--*_csv/--*_tsv argument points to a valid file")
 
     out_df = pd.DataFrame(rows).sort_values("f1", ascending=False)
+    threshold_notes = {"default": "0.5 for every method except CPAT"}
+    if "cpat" in scores:
+        threshold_notes["cpat"] = (
+            "pretrained human CPAT model (cpat/data/Human_Hexamer.tsv, Human_logitModel.RData), "
+            "published human cutoff 0.364; not retrained, not tuned on the test set"
+            if thresholds["cpat"] == DEFAULT_THRESHOLDS["cpat"] else
+            f"cutoff {thresholds['cpat']} set with --cpat_threshold (default is the published 0.364)")
     prov = dict(
         created=datetime.datetime.now().isoformat(timespec="seconds"),
         id_list=dict(path=args.id_list, sha256_16=sha256_short(args.id_list)) if args.id_list else None,
         n_test_records=int(len(labels_df)),
         n_lnc=int((labels_df.y_true == 0).sum()), n_pc=int((labels_df.y_true == 1).sum()),
-        n_genes=int(gene_df.loc[gene_df.id.isin(labels_df.id), "gene"].nunique()) if gene_df is not None else None,
-        ci="gene-clustered percentile bootstrap" if gene_df is not None else "isoform-naive",
+        n_genes=int(gene_df.loc[gene_df.id.isin(labels_df.id), "gene"].nunique()),
+        ci="gene-clustered percentile bootstrap",
         n_bootstrap=args.n_bootstrap, seed=args.seed,
         thresholds=thresholds,
+        threshold_notes=threshold_notes,
         files={k: dict(path=v, sha256_16=sha256_short(v))
                for k, v in list(file_args.items()) + [("test_lnc_fasta", args.test_lnc_fasta),
                                                        ("test_pc_fasta", args.test_pc_fasta)]
@@ -752,8 +672,6 @@ def main():
     if not args.no_paired:
         print(f"\nPaired gene-clustered bootstrap vs {args.paired_ref} "
               f"({'common subset' if args.common_subset else 'own available set'}):")
-        if gene_df is None:
-            print("  WARNING: no test FASTAs -> transcripts treated as independent clusters")
         prow = run_paired(args.paired_ref, scores, eval_labels, thresholds,
                           gene_df, args.n_bootstrap, rng)
         if prow:

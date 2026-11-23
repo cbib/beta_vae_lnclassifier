@@ -253,23 +253,3 @@ def verify_sequence_order(sequences: List[SeqRecord],
             f"CV splits and dataset must use the same ordering. "
             f"All scripts should import load_sequences_canonical_order() from data.sequence_utils"
         )
-
-
-def get_label_mapping() -> dict:
-    """
-    Get the canonical label-to-index mapping.
-    
-    Returns:
-        Dictionary mapping string labels to numeric indices
-    """
-    return {'lnc': 0, 'pc': 1}
-
-
-def get_index_to_label_mapping() -> dict:
-    """
-    Get the canonical index-to-label mapping.
-    
-    Returns:
-        Dictionary mapping numeric indices to string labels
-    """
-    return {0: 'lnc', 1: 'pc'}

@@ -4,23 +4,27 @@ Three-layer interpretability analysis for the BetaVAESubgroup architecture,
 proof-tested on GENCODE v47/v49 with the 20-token registry (NonB / REP /
 NonB2 blocks).
 
+`bash scripts/layers.sh <experiment_dir> --config configs/<config>.json` runs the
+whole pipeline with resumable stages (see its header for the stage list). The
+steps below are the same scripts run by hand.
+
 ---
 
 ## Pipeline overview
 
 ```
-Training (main_subgroup.py / main_subgroup_debug.py)
+Training (main_subgroup.py)
     ↓
 [1] extract_representations.py
     • Load trained fold checkpoints
     • Forward pass with hooks on fc_mu (z) and token_norm (feature tokens)
     • Save fold_N_repr.npz: z, tokens, labels, lengths, gc_content, token_names, block_names
     ↓
-[2] analyze_mstar.py                          (associational layer, pre-training)
-    • M* (scalar SNR) and Fréchet distance decomposition per subgroup
-    • Mean term vs covariance term — reveals distributional suppressor candidates
-    • Optional: --pattern_raw_csv also produces frechet_vs_pattern.png, flagging
-      subgroups the associational layer catches that naive pattern alignment misses
+[2] analyze_frechet.py                        (associational layer, pre-training)
+    • Fréchet distance per subgroup, split into mean term and covariance term —
+      reveals distributional suppressor candidates
+    • Writes frechet_ranking.csv and within_class_covariance_{lncrna,mrna}.csv;
+      the figures are python -m analysis.figures --only frechet
     ↓
 [3] analyze_latent_probing.py                 (diagnostics layer)
     Stage 1 — probe z for length / GC / class confounds
@@ -50,26 +54,30 @@ Training (main_subgroup.py / main_subgroup_debug.py)
       patch jointly better than the fixed single/block/all scopes predict
       from an independence baseline? Reveals synergy the fixed scopes can't.
     ↓
-[8] plot_interpretability_main.py               (synthesis, main-text figure)
+[8] python -m analysis.figures --only interpretability_main   (synthesis, main-text figure)
     • Three-panel consolidated figure: (A) the three-layer scatter
-      (Fréchet × ablation × symmetry, replaces the retired standalone
-      plot_interpretability_scatter.py), (B) single-subgroup symmetry vs
+      (Fréchet × ablation × symmetry), (B) single-subgroup symmetry vs
       IIA, (C) cross-fold greedy-search synergy curve. Designed for the
       paper's main text under a page-limit constraint — carries the full
       Layer 1/2/3 argument in one figure.
     ↓
-plot_patching_symmetry.py                      (supplementary patching figures)
-    • Symmetry-score bar chart, symmetry-vs-IIA comparison, sufficiency
-      curve, optional cross-release IIA comparison — each also usable
-      standalone for slides/appendix figures outside the main-text panel.
+python -m analysis.figures --only patching    (supplementary patching figures)
+    • patching_sufficiency: IIA from single subgroup to block to all tokens.
+    • patching_controls: matched patching against the shuffled-partner, same-class
+      and noise controls (symmetry and IIA per scope), plus the joint-set controls.
 ```
 
-Steps 1–7 write CSV + NPZ outputs; step 8 and the standalone patching plot
-read those outputs and produce the summary figures.
+Steps 1–7 write CSV + NPZ outputs and no figures; `python -m analysis.figures`
+reads those outputs and renders every figure of the paper and the supplement.
 
 ---
 
 ## Usage
+
+The examples write to the stage folders that `layers.sh` uses, below `<experiment_dir>/interpretability/`:
+`1.1_representations`, `1.2_ablation`, `1.2b_input_ablation`, `1.3_residual_ablation`,
+`1.4_latent_probing`, `3.1_patching`, `3.2_patching_controls`, `3.3_joint_search`,
+`3.4_joint_controls`; the Fréchet analysis sits next to the experiment folders in `frechet_analysis/`.
 
 ### Step 1 — Extract representations
 
@@ -77,31 +85,28 @@ read those outputs and produce the summary figures.
 python analysis/pattern/extract_representations.py \
     --experiment_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config         configs/beta_vae_subgroup_base_g49.json \
-    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --output_dir     gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
     --device         cuda:0
 ```
 
-### Step 2 — Fréchet / M* decomposition (associational layer)
+### Step 2 — Fréchet distance (associational layer)
 
 ```bash
-python analysis/pattern/analyze_mstar.py \
-    --features_dir data/processed_features_genomic \
-    --release      v49 \
-    --output_dir   gencode_v49_experiments/mstar_analysis \
-    --pattern_raw_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv
+python -m analysis.pattern.analyze_frechet \
+    --config       configs/beta_vae_subgroup_base_g49.json \
+    --output_dir   gencode_v49_experiments/frechet_analysis
 ```
 
-`--pattern_raw_csv` is optional — omit it to skip `frechet_vs_pattern.png`
-(requires step 3 to have run first, since it reads that step's output).
+Writes `frechet_ranking.csv` and the two `within_class_covariance_*.csv` tables. The supplement
+figures (Fréchet against the pattern alignment of step 3, and the within-class covariance) are
+rendered by `python -m analysis.figures`.
 
 ### Step 3 — Latent probing + pattern analysis (model-functional layer)
 
 ```bash
 python analysis/pattern/analyze_latent_probing.py \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing \
-    --model_label     "β-LNC" \
-    --gencode_version v49 \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.4_latent_probing \
     --n_permutations  1000
 ```
 
@@ -121,8 +126,7 @@ With more than one fold present, this also writes cross-fold summaries
 python analysis/pattern/analyze_subgroup_ablation.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation \
-    --gencode_version v49 \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.2_ablation \
     --device          cuda:0
 ```
 
@@ -131,10 +135,9 @@ python analysis/pattern/analyze_subgroup_ablation.py \
 ```bash
 python analysis/pattern/analyze_residual_ablation.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
-    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/representations \
+    --repr_dir        gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.1_representations \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/residual_ablation \
-    --gencode_version v49 \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/1.3_residual_ablation \
     --device          cuda:0
 ```
 
@@ -144,7 +147,7 @@ python analysis/pattern/analyze_residual_ablation.py \
 python analysis/pattern/patch_tokens.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/patching \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.1_patching \
     --device          cuda:0 \
     --n_pairs         200 \
     --min_confidence  0.7 \
@@ -171,8 +174,8 @@ python analysis/pattern/joint_patching_search.py \
     --experiment_dir  gencode_v49_experiments/beta_vae_subgroup_base_g49 \
     --config          configs/beta_vae_subgroup_base_g49.json \
     --fold            all \
-    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
-    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching \
+    --single_summary  gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.1_patching/all_folds_patching.csv \
+    --output_dir      gencode_v49_experiments/beta_vae_subgroup_base_g49/interpretability/3.3_joint_search \
     --device          cuda:0 \
     --n_pairs         1000 \
     --mode            both \
@@ -189,49 +192,20 @@ independence-null baseline per step — a searched-set IIA well above the
 null at a given set size indicates synergy the fixed scopes cannot detect,
 since block membership constrains which subgroups can be patched together.
 
-### Step 8 — Synthesis figures
+### Step 8 — Figures
 
 ```bash
-python analysis/pattern/plot_interpretability_main.py \
-    --frechet_csv          gencode_v49_experiments/mstar_analysis/frechet_ranking.csv \
-    --ablation_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/ablation/analysis/all_folds_ablation.csv \
-    --pattern_raw_csv      gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_raw.csv \
-    --pattern_residual_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/latent_probing/cross_fold_pattern_residual.csv \
-    --patching_csv         gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/all_folds_patching.csv \
-    --greedy_all_folds     gencode_v49_experiments/beta_vae_subgroup_base_g49/joint_patching/joint_patching_greedy_all_folds.csv \
-    --output_dir           gencode_v49_experiments/benchmark_comparison \
-    --release              v49
+python -m analysis.figures --release 49 --exp_dir gencode_v49_experiments/beta_vae_subgroup_base_g49 \
+    --benchmark_dir <benchmark folder> --out figures/g49 [--only interpretability_main]
 ```
 
-All CSV inputs must share the same subgroup key
-convention (internal `TE_*` keys) — the figure always renders `TE_*` as
-`REP_*` in labels, unconditionally (no `--display_names` flag here, unlike
-the other plotting scripts).
+The main-text interpretability figure is `interpretability_main` (panel A: Fréchet, ablation and
+symmetry per subgroup, panel B: single-subgroup symmetry and IIA, panel C: greedy joint IIA).
+Internal subgroup keys stay `TE_*`; the labels read `REP_*`.
 
-For standalone supplementary/appendix figures instead of the consolidated
-panel:
-
-```bash
-python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
-    --output_dir   gencode_v49_experiments/benchmark_comparison \
-    --release      v49 \
-    --display_names \
-    --top_n_single 6
-```
-
-Produces, from one call: the symmetry-score bar chart, the symmetry-vs-IIA
-comparison, and (if the input CSV has block/all scopes) the sufficiency
-curve. For a cross-release comparison, add a second release's summary:
-
-```bash
-python analysis/pattern/plot_patching_symmetry.py \
-    --patching_csv  gencode_v49_experiments/beta_vae_subgroup_base_g49/patching/patching_summary.csv \
-    --patching_csv2 gencode_v47_experiments/beta_vae_subgroup_base_g47_new/patching/patching_summary.csv \
-    --release       v49 --release2 v47 \
-    --output_dir    gencode_v49_experiments/benchmark_comparison \
-    --display_names
-```
+The supplement figures are rendered by `python -m analysis.figures`: `--only patching`
+(sufficiency curve and control experiments), `--only ablations` (the three ablations),
+`--only latent_probing` (latent probing, redundancy and pattern alignment) and `--only frechet`.
 
 ---
 
@@ -257,7 +231,7 @@ related.
 
 $$FD^2 = \underbrace{\|\mu_1-\mu_2\|_2^2}_{\text{mean term}}  +  \underbrace{\text{Tr}\left(\Sigma_1+\Sigma_2-2(\Sigma_1\Sigma_2)^{1/2}\right)}_{\text{covariance term}}$$
 
-Unlike scalar SNR/M*, this captures class-conditional covariance
+Unlike a comparison of class means, this captures class-conditional covariance
 differences — the source of signal for distributional suppressor
 candidates such as REP_CORE, which score near zero on scalar metrics but
 rank highly by total FD.
@@ -284,7 +258,7 @@ Reported per direction and as an overall mean (`iia_overall`). A subgroup
 can show a nonzero symmetry score (partial shift) with near-zero IIA
 (rarely changes the actual decision) — the two metrics answer different
 questions: "does this move the needle" vs. "does this change the verdict."
-`symmetry_vs_iia_{release}.png` makes this divergence visible directly.
+Panel B of the main figure shows this divergence directly.
 
 **Joint-search independence null** — for a searched token set $S$, the
 independence-null IIA is:
@@ -303,52 +277,51 @@ is consistent with independent, non-synergistic contributions.
 Internal code, CSV columns, and checkpoint keys use `te`/`TE_*` for the
 repeat-element block for historical reasons. Display labels throughout
 plots and documents use `REP`/`REP_*` (the scientifically accurate name).
-Pass `--display_names` to the plotting scripts to apply this remapping in
-figure labels only — do not rename the internal keys.
+The figure code applies this remapping in the labels only — do not rename
+the internal keys.
 
 ---
 
 ## Output reference
 
+Below `<experiment_dir>/interpretability/` (stage ids as in `layers.sh`):
+
 ```
-representations/
+1.1_representations/
   fold_N_repr.npz            z, tokens, labels, token_names, block_names, ...
 
-mstar_analysis/
-  frechet_results.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction
-  frechet_vs_pattern.png     (only if --pattern_raw_csv given)
+1.2_ablation/
+  all_folds_ablation.csv     subgroup, block, mode, acc_drop, fold, ...
 
-latent_probing/
+1.2b_input_ablation/
+  all_folds_input_ablation.csv
+
+1.3_residual_ablation/
+  all_folds_residual_ablation.csv
+
+1.4_latent_probing/
   fold_N/
-    latent_probing.csv / .png
-    redundancy.csv / .png
-    pattern_raw.csv / .png
-    pattern_residual.csv / .png
-    pattern_comparison.png
+    latent_probing.csv
+    redundancy.csv
+    pattern_raw.csv
+    pattern_residual.csv
   cross_fold_latent_probing.csv
   cross_fold_redundancy.csv                  includes p_value_fisher_combined, q_value_bh, significant_fdr
   cross_fold_pattern_raw.csv
   cross_fold_pattern_residual.csv
-  cross_fold_pattern_comparison.png
   cross_fold_pattern_comparison_stats.csv    p_value_paired, q_value_bh, significant_fdr
   key_findings.txt
 
-ablation/analysis/
-  all_folds_ablation.csv                     subgroup, block, mode, acc_drop, fold, ...
-  cross_fold_ablation_{mode}_stats.csv       p_value, q_value_bh, significant_fdr
-
-residual_ablation/
-  all_folds_residual_ablation.csv
-  feature_vs_residual_comparison_stats.csv   p_value_paired, q_value_bh, significant_fdr
-
-patching/
+3.1_patching/
   fold_N_patching.csv
   all_folds_patching.csv
   patching_summary.csv       subgroup, block, patch_mode, patch_scope, direction,
                              mean_delta_logit, n_valid_baseline, n_iia_success,
                              iia, symmetry_score, causal_effect, iia_overall, ...
 
-joint_patching/
+3.2_patching_controls/       the same files for the shuffled, same-class and noise controls
+
+3.3_joint_search/
   joint_patching_greedy_fold{N}.csv
   joint_patching_greedy_all_folds.csv
   joint_patching_greedy_summary.csv          mean/std iia_joint and additive-null per step
@@ -356,11 +329,17 @@ joint_patching/
   joint_patching_topk_all_folds.csv
   joint_patching_topk_summary.csv
 
-benchmark_comparison/
-  patching_symmetry_bar_{release}.png / .pdf
-  symmetry_vs_iia_{release}.png / .pdf
-  sufficiency_curve_{release}.png / .pdf
-  cross_release_iia_{release_a}_vs_{release_b}.png / .pdf   (if --patching_csv2 given)
-  interpretability_main_{release}.png / .pdf                 (plot_interpretability_main.py,
-                                                              main-text 3-panel figure)
+3.4_joint_controls/          joint-search controls
+
+g<release>_results.txt       stage 3.5, the interventional results in one text file
 ```
+
+Beside the experiment folders:
+
+```
+frechet_analysis/
+  frechet_ranking.csv        subgroup, block, frechet_dist, mean_term, cov_term, cov_fraction, fd_status
+  within_class_covariance_lncrna.csv, within_class_covariance_mrna.csv   subgroup x subgroup
+```
+
+The figures are written by `python -m analysis.figures`, not by these scripts.

@@ -22,8 +22,8 @@ Role-mask (legacy 15-token partition — disabled for n_tokens ≠ 15)
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Dict, List, Optional, Tuple
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -31,35 +31,6 @@ import torch.nn.functional as F
 
 from data.feature_registry import REGISTRY, FeatureRegistry, BLOCK_DEFS
 from models.subgroup_projector import SubgroupProjectionLayer
-from models.gradient_reversal import GradientReversalLayer, LengthPredictionHead
-from models.token_self_attention import TokenSelfAttention
-
-
-# ---------------------------------------------------------------------------
-# Legacy role-mask (15 tokens, 4 heads) — used only when n_tokens == 15
-# ---------------------------------------------------------------------------
-
-_LEGACY_ROLE_MASK_INDICES: List[List[int]] = [
-    [2, 3, 1, 5],       # Head 0 — NonB structural  (GQ, IR, DR, STR)
-    [0, 4, 6, 7, 8],    # Head 1 — NonB global/rep  (APR, MR, TRI, Z, GLOBAL)
-    [9, 10, 11],        # Head 2 — TE content       (TE_QUALITY, TE_CORE, TE_LCTR)
-    [12, 13, 14],       # Head 3 — TE annotation    (TE_PSEUDO, TE_UNKNOWN, TE_GLOBAL)
-]
-
-
-def _build_role_mask(
-    n_tokens:  int,
-    num_heads: int,
-    device:    torch.device,
-    indices:   List[List[int]],
-) -> torch.Tensor:
-    assert num_heads == len(indices), (
-        f"role_mask requires exactly {len(indices)} heads, got {num_heads}"
-    )
-    mask = torch.full((num_heads, n_tokens), float("-inf"), device=device)
-    for h, idx in enumerate(indices):
-        mask[h, idx] = 0.0
-    return mask
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +53,7 @@ class CrossModalAttentionMH(nn.Module):
             raise ValueError(
                 f"d_feat ({d_feat}) must be divisible by num_heads ({num_heads})."
             )
-        if attn_mode not in ("standard", "role_mask", "orthogonal"):
+        if attn_mode != "standard":
             raise ValueError(f"Unknown attn_mode '{attn_mode}'")
 
         self.d_feat    = d_feat
@@ -106,17 +77,6 @@ class CrossModalAttentionMH(nn.Module):
         self.norm       = nn.LayerNorm(d_model)
         self.resid_drop = nn.Dropout(dropout)
 
-        self._role_mask: Optional[torch.Tensor] = None
-
-    def _get_role_mask(
-        self, n_tokens: int, device: torch.device
-    ) -> torch.Tensor:
-        if self._role_mask is None or self._role_mask.device != device:
-            self._role_mask = _build_role_mask(
-                n_tokens, self.num_heads, device, _LEGACY_ROLE_MASK_INDICES
-            )
-        return self._role_mask
-
     def forward(
         self,
         seq_positions:  torch.Tensor,
@@ -132,10 +92,6 @@ class CrossModalAttentionMH(nn.Module):
 
         scale  = torch.exp(self.log_temp) * (d_h ** 0.5)
         scores = torch.matmul(Q, K.transpose(-2, -1)) / scale
-
-        if self.attn_mode == "role_mask":
-            role_mask = self._get_role_mask(N, scores.device)
-            scores = scores + role_mask.unsqueeze(0).unsqueeze(2)
 
         attn_weights = self.attn_drop(torch.softmax(scores, dim=-1))
 
@@ -178,7 +134,6 @@ class BetaVAESubgroup(nn.Module):
     mu, logvar, z            VAE parameters
     attn_weights             (B, num_heads, L_encoded, N_tokens)
     projection               z
-    length_pred              (B,)  from GRL adversarial head
     """
 
     def __init__(
@@ -198,9 +153,6 @@ class BetaVAESubgroup(nn.Module):
         attn_dropout:      float           = 0.1,
         attn_temperature:  float           = 4.0,
         attn_mode:         str             = "standard",
-        use_token_sa:      bool            = False,
-        token_sa_heads:    int             = 4,
-        token_sa_layers:   int             = 1,
         classifier_hidden: List[int]       = None,
         registry:          FeatureRegistry = REGISTRY,
         # Accepted for backward compat with old configs; not used internally
@@ -224,17 +176,6 @@ class BetaVAESubgroup(nn.Module):
         self._registry    = registry
         self.d_proj       = d_proj
 
-        # Validate role_mask compatibility
-        n_tokens = registry.total_tokens
-        if attn_mode == "role_mask" and n_tokens != 15:
-            warnings.warn(
-                f"attn_mode='role_mask' is defined for 15 tokens but registry "
-                f"has {n_tokens} tokens. Falling back to 'standard'. "
-                f"Update _LEGACY_ROLE_MASK_INDICES or provide a new partition "
-                f"to re-enable role_mask.",
-                UserWarning,
-            )
-            self.attn_mode = "standard"
 
         # ── CSE pre-encoder ───────────────────────────────────────────────────
         if use_cse:
@@ -301,18 +242,6 @@ class BetaVAESubgroup(nn.Module):
 
         # Token LayerNorm
         self.token_norm = nn.LayerNorm(d_proj)
-
-        # Optional token self-attention
-        self.use_token_sa = use_token_sa
-        if use_token_sa:
-            self.token_sa = TokenSelfAttention(
-                d_proj   = d_proj,
-                n_heads  = token_sa_heads,
-                n_layers = token_sa_layers,
-                dropout  = fusion_dropout,
-            )
-        else:
-            self.token_sa = None
 
         # ── Cross-modal attention ─────────────────────────────────────────────
         self.cross_attn = CrossModalAttentionMH(
@@ -387,18 +316,18 @@ class BetaVAESubgroup(nn.Module):
         if "te" in registry.block_names:
             self.feat_classifier_te = self.feat_classifiers["te"]
 
-        # ── Adversarial length disentanglement ────────────────────────────────
-        self.grl         = GradientReversalLayer()
-        self.length_head = LengthPredictionHead(
-            latent_dim = latent_dim,
-            hidden_dim = 64,
-        )
-        self.register_buffer(
-            "lambda_adv",
-            torch.tensor(0.0, dtype=torch.float32),
-        )
-
         self.projection = nn.Identity()
+
+    _REMOVED_STATE_PREFIXES = ("length_head.", "lambda_adv")
+
+    def load_state_dict(self, state_dict, strict: bool = True, **kwargs):
+        """Drop keys of the removed adversarial head (checkpoints saved before v3.0.0)."""
+        meta = getattr(state_dict, "_metadata", None)
+        kept = OrderedDict((k, v) for k, v in state_dict.items()
+                           if not k.startswith(self._REMOVED_STATE_PREFIXES))
+        if meta is not None:
+            kept._metadata = meta
+        return super().load_state_dict(kept, strict=strict, **kwargs)
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -449,9 +378,6 @@ class BetaVAESubgroup(nn.Module):
 
         feature_tokens = torch.cat(all_tokens, dim=1)   # (B, N_total, d_proj)
         feature_tokens = self.token_norm(feature_tokens)
-
-        if self.use_token_sa and self.token_sa is not None:
-            feature_tokens = self.token_sa(feature_tokens)
 
         # Cross-modal attention
         h_seq = h.permute(0, 2, 1)
@@ -547,10 +473,6 @@ class BetaVAESubgroup(nn.Module):
         z       = mu if deterministic else self.reparameterize(mu, logvar)
         x_recon = self.decode(z)
 
-        # Adversarial length
-        z_reversed  = self.grl(mu, lambda_adv=float(self.lambda_adv))
-        length_pred = self.length_head(z_reversed)
-
         # Main classifier
         summaries    = list(self._block_summaries.values())
         combined     = torch.cat([z] + summaries, dim=1)
@@ -564,8 +486,7 @@ class BetaVAESubgroup(nn.Module):
             "logvar":         logvar,
             "z":              z,
             "attn_weights":   attn_weights,
-            "projection":     z,
-            "length_pred":    length_pred,
+            "projection":     z
         }
 
         for block_name, summary in self._block_summaries.items():

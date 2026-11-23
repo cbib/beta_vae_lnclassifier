@@ -364,7 +364,7 @@ _TE_DENSITY_FEATURES: List[Tuple[str, str, str, str]] = [
 #                       use prop_*_bin{1..10} (proportions) instead
 #
 # rg4_peak_rel_position sentinel: -1.0 when has_peak=False (no peaks detected).
-# Imputed to 0.5 (neutral midpoint) in prepare_features.py before scaling.
+# Imputed to 0.5 (neutral midpoint) in prep_features.py before scaling.
 # has_peak (bool) separately encodes peak absence.
 
 # ── RG4 subgroup (rg4detector) ─────────────────────────────────────────────

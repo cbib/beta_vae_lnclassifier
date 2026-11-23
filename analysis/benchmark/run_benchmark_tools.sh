@@ -14,7 +14,7 @@
 #
 # Usage
 # -----
-# bash analysis/run_benchmark_tools.sh \
+# bash analysis/benchmark/run_benchmark_tools.sh \
 #     --lnc_fasta          data/split_gencode_49/lnc_test.fa \
 #     --pc_fasta           data/split_gencode_49/pc_test.fa \
 #     --train_lnc_fasta    data/split_gencode_49/lnc_trainval.fa \
@@ -524,7 +524,7 @@ done
 log ""
 log "Next step — run compare_models.py:"
 log ""
-log "  python analysis/compare_models.py \\"
+log "  python analysis/benchmark/compare_models.py \\"
 log "      --blnc_csv      ${BLNC_PREDICTIONS:-<test_predictions.csv>} \\"
 log "      --cpat_csv      ${CPAT_HARD_CSV} \\"
 log "      --cpc2_tsv      ${CPC2_RESULT} \\"

@@ -29,8 +29,8 @@ suffix=""
 for l in 1 2 3; do has "$l" && suffix+="$l"; done
 [[ "$suffix" == "123" ]] && suffix="" || suffix="_L$suffix"
 
-EXP47=gencode_v47_experiments_genegrouped/beta_vae_subgroup_base_g47_genegrouped_binfix
-EXP49=gencode_v49_experiments_genegrouped/beta_vae_subgroup_base_g49_genegrouped_binfix
+EXP47=gencode_v47_experiments/beta_vae_subgroup_base_g47
+EXP49=gencode_v49_experiments/beta_vae_subgroup_base_g49
 
 # Selected layers against the released β-LNC outputs of one experiment.
 #   compare <tag> <experiment_dir> <config>
@@ -42,7 +42,7 @@ EXP49=gencode_v49_experiments_genegrouped/beta_vae_subgroup_base_g49_genegrouped
 compare() {
   local tag="$1" exp="${2%/}" cfg="$3"
   local interp="$exp/interpretability"
-  local mstar="$(dirname "$exp")/mstar_analysis"
+  local frechet="$(dirname "$exp")/frechet_analysis"
   local args=(--experiment_dir "$exp" --config "$cfg"
               --folds all --output_dir "analysis/triframe/reports/${tag}${suffix}")
   if has 1; then
@@ -53,7 +53,7 @@ compare() {
            --num_workers 2 --forward_batch_size 128)
   fi
   if has 2; then
-    args+=(--frechet_reference "$mstar/frechet_ranking.csv"
+    args+=(--frechet_reference "$frechet/frechet_ranking.csv"
            --frechet_rtol 1e-6 --frechet_atol 1e-8)
   fi
   if has 3; then
@@ -66,6 +66,6 @@ compare() {
 
 echo "layers: ${want}  (reports: analysis/triframe/reports/*${suffix})"
 rc=0
-compare g47 "$EXP47" configs/beta_vae_subgroup_g47_genegrouped.json || rc=1
-compare g49 "$EXP49" configs/beta_vae_subgroup_g49_genegrouped.json || rc=1
+compare g47 "$EXP47" configs/beta_vae_subgroup_base_g47.json || rc=1
+compare g49 "$EXP49" configs/beta_vae_subgroup_base_g49.json || rc=1
 exit $rc

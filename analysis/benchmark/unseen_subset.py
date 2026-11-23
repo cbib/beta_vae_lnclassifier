@@ -10,6 +10,8 @@ For every test transcript, find the first GENCODE release (scanned range
 the transcripts that appear only AFTER a given release (the cutoff). The
 resulting ID lists feed compute_benchmark_ci.py --id_list, so no model is
 retrained: existing predictions are simply re-scored on the unseen subset.
+The seen list (seen_ids_L2_by_v<c>.txt: determined transcripts that are not
+unseen at L2) is the contrast subset; run_unseen_benchmark.sh scores both.
 
 Three exposure levels, from loosest to strictest "unseen":
   L1  versioned transcript ID absent from every release <= cutoff
@@ -31,11 +33,11 @@ for sequence overlap, not a sequence-level check.
 Usage
 -----
 python analysis/benchmark/unseen_subset.py \\
-    --test_lnc_fasta data/split_gencode_49_genegrouped/lnc_test.fa \\
-    --test_pc_fasta  data/split_gencode_49_genegrouped/pc_test.fa \\
+    --test_lnc_fasta data/split_gencode_49/lnc_test.fa \\
+    --test_pc_fasta  data/split_gencode_49/pc_test.fa \\
     --test_release 49 --cutoffs 34 43 46 \\
     --cache_dir gencode_release_index \\
-    --output_dir gencode_v49_experiments_genegrouped/unseen_subset
+    --output_dir gencode_v49_experiments/unseen_subset
 """
 
 from __future__ import annotations
@@ -302,6 +304,11 @@ def main():
                 if by.get(cls, 0) < args.min_class_n:
                     print(f"  WARNING: {level} after v{c}: only {by.get(cls, 0)} "
                           f"{cls} transcripts (< {args.min_class_n}); CIs will be wide")
+        # the complement at the primary level: transcripts whose history is
+        # determined and that appear in a release <= cutoff (contrast subset)
+        seen_ids = test.loc[determined & ~test[f"unseen_L2_v{c}"], "id"]
+        (out / f"seen_ids_L2_by_v{c}.txt").write_text(
+            "\n".join(sorted(seen_ids)) + ("\n" if len(seen_ids) else ""))
 
     summ = pd.DataFrame(summary)
     test.to_csv(out / "exposure_table.csv", index=False)
@@ -324,7 +331,7 @@ def main():
     print(summ[summ.cls != "all"].pivot_table(
         index=["level", "cutoff"], columns="cls", values="pct_unseen").round(1).to_string())
     print(f"\nWrote {out}/ (exposure_table.csv, exposure_summary.csv, "
-          f"unseen_ids_*.txt, unseen_manifest.json)")
+          f"unseen_ids_*.txt, seen_ids_L2_by_v*.txt, unseen_manifest.json)")
 
 
 if __name__ == "__main__":

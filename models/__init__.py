@@ -3,12 +3,6 @@
 """
 Model factory
 """
-""" from .cnn import CNN
-from .vae import VAE
-from .transformer import TransformerClassifier, LightweightTransformer
-from .cnn_transformer import CNNTransformerHybrid """
-from .beta_vae_contrastive_model import BetaVAE_Contrastive
-from .beta_vae_features import BetaVAEWithFeatures
 from .beta_vae_subgroup import BetaVAESubgroup
 from .feature_only_classifier import FeatureOnlyClassifier
 
@@ -25,13 +19,6 @@ def get_model(architecture, **kwargs):
         model: nn.Module
     """
     models = {
-        """ 'cnn': CNN,
-        'vae': VAE,
-        'transformer': TransformerClassifier,
-        'lightweight_transformer': LightweightTransformer,
-        'cnn_transformer': CNNTransformerHybrid, """
-        'beta_vae_contrastive': BetaVAE_Contrastive,
-        'beta_vae_features': BetaVAEWithFeatures,
         'beta_vae_subgroup': BetaVAESubgroup,
         'feature_only': FeatureOnlyClassifier,
     }
@@ -40,54 +27,3 @@ def get_model(architecture, **kwargs):
         raise ValueError(f"Unknown architecture: {architecture}. Available: {list(models.keys())}")
     
     return models[architecture](**kwargs)
-
-def get_contrastive_model(architecture, **kwargs):
-    """
-    Factory function to get contrastive learning models
-    
-    Args:
-        architecture: Model architecture name
-        **kwargs: Model-specific parameters
-    
-    Returns:
-        Model instance with contrastive learning support
-    """
-    """
-    if architecture == 'autoencoder':
-        from models.autoencoder_contrastive import AutoencoderContrastive
-        return AutoencoderContrastive(**kwargs)
-    
-    elif architecture == 'transformer':
-        from models.transformer_contrastive import TransformerContrastive
-        return TransformerContrastive(**kwargs)
-    
-    elif architecture == 'bert':
-        from models.bert_contrastive import BERTContrastive
-        return BERTContrastive(**kwargs) """
-    
-    if architecture == 'beta_vae':
-        from models.beta_vae_contrastive_model import BetaVAE_Contrastive
-        return BetaVAE_Contrastive(**kwargs)
-    
-    elif architecture == 'cnn':
-        from models.cnn_contrastive import CNNContrastive
-        return CNNContrastive(**kwargs)
-    
-    elif architecture == 'beta_vae_features':
-        from models.beta_vae_features import BetaVAEWithFeatures
-        return BetaVAEWithFeatures(**kwargs)
-    
-    elif architecture == 'beta_vae_features_attn':
-        from models.beta_vae_features_attn import BetaVAEWithFeaturesAttention
-        return BetaVAEWithFeaturesAttention(**kwargs)
-    
-    elif architecture == 'beta_vae_subgroup':
-        from models.beta_vae_subgroup import BetaVAESubgroup
-        return BetaVAESubgroup(**kwargs)
-    
-    elif architecture == 'feature_only':
-        from models.feature_only_classifier import FeatureOnlyClassifier
-        return FeatureOnlyClassifier(**kwargs)
-    
-    else:
-        raise ValueError(f"Unknown architecture for contrastive learning: {architecture}")

@@ -29,9 +29,9 @@
 # Stage ids (layer numbering as in the manuscript)
 #   1.1 representations  1.2 subgroup ablation  1.3 residual ablation  1.4 latent probing
 #   1.2b input-level ablation (zero/mean/permute; also runs on feature-only models)
-#   2.1 M*/Frechet       (per release, shared across experiments of that release)
+#   2.1 Frechet          (per release, shared across experiments of that release)
 #   3.1 patching matched 3.2 patching controls  3.3 joint search  3.4 joint controls
-#   3.5 interventional results  S.1 / S.2 synthesis figures
+#   3.5 interventional results
 
 set -euo pipefail
 
@@ -85,8 +85,7 @@ PATCH="$OUT/3.1_patching"
 PCTRL="$OUT/3.2_patching_controls"
 JOINT="$OUT/3.3_joint_search"
 JCTRL="$OUT/3.4_joint_controls"
-FIG="$OUT/figures"
-MSTAR="$(dirname "$EXP")/mstar_analysis"
+FRECHET="$(dirname "$EXP")/frechet_analysis"
 DONE="$OUT/.done"; LOGS="$OUT/logs"
 GREEDY="$JOINT/joint_patching_greedy_all_folds.csv"
 
@@ -98,12 +97,12 @@ NF=$(python - "$CFG" <<'PY'
 import json, sys
 c = json.load(open(sys.argv[1]))
 t = c.get("training", {})
-print(t.get("n_folds", 5), t.get("group_by_gene", False), t.get("lambda_conc", "unset"))
+print(t.get("n_folds", 5), t.get("group_by_gene", False))
 m = c.get("model", {})
 print(str(m.get("architecture", m.get("type", c.get("architecture", "")))))
 PY
 )
-read -r N_FOLDS GBG LAMBDA <<<"$(head -1 <<<"$NF")"
+read -r N_FOLDS GBG <<<"$(head -1 <<<"$NF")"
 ARCH=$(sed -n 2p <<<"$NF")
 FEATONLY=0
 [[ "$ARCH" == *feature_only* || "$CFG" == *feature_only* || "$EXP" == *feature_only* ]] && FEATONLY=1
@@ -115,11 +114,11 @@ if [[ "$GBG" != "True" ]]; then
   (( LEGACY )) || fail "group_by_gene is $GBG in $CFG (use --allow-legacy for old, leaky models)"
   echo "WARNING: group_by_gene is $GBG: results are on gene-leaky folds" >&2
 fi
-echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG lambda_conc=$LAMBDA feature_only=$FEATONLY"
-echo "out=$OUT  mstar=$MSTAR"
+echo "release=v$REL config=$CFG folds=$N_FOLDS group_by_gene=$GBG feature_only=$FEATONLY"
+echo "out=$OUT  frechet=$FRECHET"
 
 if (( ! DRY )); then
-  mkdir -p "$DONE" "$LOGS" "$FIG"
+  mkdir -p "$DONE" "$LOGS"
   python - "$EXP" "$CFG" "$OUT" <<'PY'
 import hashlib, json, os, subprocess, sys, time, glob
 exp, cfg, out = sys.argv[1:4]
@@ -169,7 +168,7 @@ stage 1.1 "extract representations" \
 
 stage 1.2 "subgroup ablation" \
   python -m analysis.pattern.analyze_subgroup_ablation --experiment_dir "$EXP" --config "$CFG" \
-    --output_dir "$ABL" --gencode_version "v$REL" --device "$DEVICE"
+    --output_dir "$ABL" --device "$DEVICE"
 
 stage 1.2b "input-level ablation (zero/mean/permute)" \
   python -m analysis.pattern.analyze_input_ablation --experiment_dir "$EXP" --config "$CFG" \
@@ -177,18 +176,16 @@ stage 1.2b "input-level ablation (zero/mean/permute)" \
 
 stage 1.3 "residual ablation" \
   python -m analysis.pattern.analyze_residual_ablation --experiment_dir "$EXP" --repr_dir "$REPR" \
-    --config "$CFG" --output_dir "$RABL" --gencode_version "v$REL" --device "$DEVICE"
+    --config "$CFG" --output_dir "$RABL" --device "$DEVICE"
 
 stage 1.4 "latent probing + pattern alignment" \
   python -m analysis.pattern.analyze_latent_probing --repr_dir "$REPR" --output_dir "$PROBE" \
-    --model_label "β-LNC" --gencode_version "v$REL" --n_permutations "$N_PERMUTATIONS"
+    --n_permutations "$N_PERMUTATIONS"
 
 # ---------------------------------------------------------------- Layer 2
-# Uses the trainval FASTAs/features named in the config; model-independent except
-# for the optional pattern-alignment comparison plot (needs 1.4).
-stage 2.1 "M* / Frechet decomposition" \
-  python -m analysis.pattern.analyze_mstar --config "$CFG" --output_dir "$MSTAR" \
-    --pattern_raw_csv "$PROBE/cross_fold_pattern_raw.csv"
+# Uses the trainval FASTAs/features named in the config; model-independent.
+stage 2.1 "Frechet distance" \
+  python -m analysis.pattern.analyze_frechet --config "$CFG" --output_dir "$FRECHET"
 
 # ---------------------------------------------------------------- Layer 3
 stage 3.1 "patching: matched (single, block, all) + shuffled" \
@@ -215,20 +212,4 @@ stage 3.5 "collect interventional results" \
     --matched_summary "$PATCH/patching_summary.csv" --joint_controls_dir "$JCTRL" \
     --log "$LOGS/3.4.log" --out "$OUT/g${REL}_results.txt"
 
-# ---------------------------------------------------------------- synthesis
-need S.1 "$MSTAR/frechet_ranking.csv" "$ABL/all_folds_ablation.csv" \
-     "$PROBE/cross_fold_pattern_raw.csv" "$PROBE/cross_fold_pattern_residual.csv" \
-     "$PATCH/all_folds_patching.csv" "$GREEDY"
-stage S.1 "main interpretability figure (layers 1-3)" \
-  python -m analysis.pattern.plot_interpretability_main \
-    --frechet_csv "$MSTAR/frechet_ranking.csv" --ablation_csv "$ABL/all_folds_ablation.csv" \
-    --pattern_raw_csv "$PROBE/cross_fold_pattern_raw.csv" \
-    --pattern_residual_csv "$PROBE/cross_fold_pattern_residual.csv" \
-    --patching_csv "$PATCH/all_folds_patching.csv" --greedy_all_folds "$GREEDY" \
-    --output_dir "$FIG" --release "v$REL"
-
-stage S.2 "patching symmetry figures" \
-  python -m analysis.pattern.plot_patching_symmetry --patching_csv "$PATCH/patching_summary.csv" \
-    --output_dir "$FIG" --release "v$REL" --display_names --top_n_single 6
-
-(( DRY )) && echo "dry run only: nothing executed" || echo "requested stages finished; results: $OUT/g${REL}_results.txt  figures: $FIG"
+(( DRY )) && echo "dry run only: nothing executed" || echo "requested stages finished; results: $OUT/g${REL}_results.txt"

@@ -85,6 +85,15 @@ def test_unseen_subset(tmp_path):
     assert t.drop("ENST00000000008.1").in_test_release.all()
     ids = (d / "out/unseen_ids_L2_after_v46.txt").read_text().split()
     assert ids == ["ENST00000000003", "ENST00000000005", "ENST00000000006"], ids
+    # the seen list is the complement among the transcripts with a known history
+    seen46 = (d / "out/seen_ids_L2_by_v46.txt").read_text().split()
+    assert seen46 == ["ENST00000000001", "ENST00000000002", "ENST00000000004",
+                      "ENST00000000007"], seen46
+    for c in (34, 43, 46):
+        un = set((d / f"out/unseen_ids_L2_after_v{c}.txt").read_text().split())
+        se = set((d / f"out/seen_ids_L2_by_v{c}.txt").read_text().split())
+        known = set(t.index[t.exposure_determined].map(lambda x: x.split(".")[0]))
+        assert un.isdisjoint(se) and un | se == known, c
 
     # cutoff-only scan gives the same unseen sets as the full scan
     cmdc = [c for c in cmd]

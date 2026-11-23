@@ -9,7 +9,7 @@ Dataset combining RNA sequences with TE, NonB, and NonB2 features.
 * NonB2 has a single source ("processed" — RNA/transcript-level only). 
   Returns as "nonb2" key in __getitem__.
 * NonB2 ID normalisation: strips pipe-suffix then version suffix, matching
-  prepare_features.py convention.
+  prep_features.py convention.
 
 __getitem__ keys
 ----------------
@@ -209,7 +209,7 @@ class SequenceFeatureDataset(Dataset):
                 self._te_legacy_scaler = pickle.load(f)
             self._te_bank = None
             print("  WARNING: using legacy TE scaler. "
-                  "Re-run prepare_features.py to generate a FeatureScalerBank.")
+                  "Re-run prep_features.py to generate a FeatureScalerBank.")
         else:
             raise ValueError(
                 "Provide te_scaler_bank_path (or legacy te_scaler_path)."
@@ -224,7 +224,7 @@ class SequenceFeatureDataset(Dataset):
                 self._nonb_legacy_scaler = pickle.load(f)
             self._nonb_bank = None
             print("  WARNING: using legacy NonB scaler. "
-                  "Re-run prepare_features.py to generate a FeatureScalerBank.")
+                  "Re-run prep_features.py to generate a FeatureScalerBank.")
         else:
             raise ValueError(
                 "Provide nonb_scaler_bank_path (or legacy nonb_scaler_path)."
@@ -236,7 +236,7 @@ class SequenceFeatureDataset(Dataset):
             if nonb2_scaler_bank_path is None:
                 raise ValueError(
                     "nonb2_csv provided but nonb2_scaler_bank_path is missing. "
-                    "Run prepare_features.py with --nonb2_csv to generate it."
+                    "Run prep_features.py with --nonb2_csv to generate it."
                 )
             self._nonb2_bank = FeatureScalerBank.load(nonb2_scaler_bank_path)
 

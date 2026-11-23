@@ -13,7 +13,7 @@
 #   lncrnabert/lncrnabert_provenance.json       model, fasta hashes, counts
 #
 # Usage
-#   bash analysis/benchmark/run_lncrnabert.sh \
+#   bash scripts/run_lncrnabert.sh \
 #       --lnc_fasta <split>/lnc_test.fa --pc_fasta <split>/pc_test.fa \
 #       --output_dir <base>/benchmark_tools [--release v49] [--env lncrnabert] \
 #       [--batch_size 8] [--model luukromeijn/lncRNA-BERT-kmer-k3-finetuned] \

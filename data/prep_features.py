@@ -1,5 +1,5 @@
 """
-data/prepare_features.py
+data/prep_features.py
 
 Prepare TE, NonB, and NonB2 (RNA secondary structure + rG4) features
 for integration with β-VAE.
