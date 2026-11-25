@@ -4,7 +4,7 @@
 #SBATCH --error=logs/layers_input_%j.err
 #SBATCH --gres=gpu:nvidia_h100_nvl:1
 #SBATCH --partition=gpu
-#SBATCH --time=48:00:00
+#SBATCH --time=70:00:00
 #SBATCH --mem=32G
 #
 # Layers 1-3 interpretability analyses for one trained experiment folder.
@@ -57,7 +57,7 @@ if (( ! DRY )); then
   eval "$(conda shell.bash hook)"
   conda activate beta_lncrna
 fi
-cd ${DATA_ROOT} 2>/dev/null || true
+cd "${DATA_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}" 2>/dev/null || true
 
 # ---------------------------------------------------------------- parameters
 DEVICE=cuda:0

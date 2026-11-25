@@ -50,7 +50,7 @@ EVAL_SCRIPT=analysis/evaluation/evaluate_cv_fold_subgroup.py   # adjust if elsew
 module load nvidia/cuda/12.1
 eval "$(conda shell.bash hook)"
 conda activate beta_lncrna
-cd ${DATA_ROOT}
+cd "${DATA_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
 mkdir -p logs
 
 fail() { echo "PREFLIGHT FAILED: $*" >&2; exit 1; }
